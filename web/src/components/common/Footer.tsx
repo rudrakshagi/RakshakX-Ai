@@ -1,6 +1,7 @@
 import React from 'react';
 import { Github, Heart, Terminal, BookOpen, Scale, FileText } from 'lucide-react';
 import { Logo } from './Logo';
+import { SocialFooterStrip } from './SocialFooterStrip';
 
 export const Footer: React.FC = () => {
   return (
@@ -100,10 +101,15 @@ export const Footer: React.FC = () => {
           </div>
         </div>
 
+        {/* Social Links & Proprietor Attribution */}
+        <div className="py-8 border-t border-slate-200/80 dark:border-slate-800/80 flex justify-center">
+          <SocialFooterStrip />
+        </div>
+
         {/* Bottom Bar */}
-        <div className="pt-8 border-t border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
+        <div className="pt-4 border-t border-slate-100 dark:border-slate-800/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
           <div>
-            © {new Date().getFullYear()} RakshakX Project. Built for ethical testing and authorized security research.
+            © {new Date().getFullYear()} RakshakX (Rakshak AI) · Community Edition of Trinetra AI.
           </div>
           <div className="flex items-center gap-4">
             <span>Only test systems you have explicit authorization to assess.</span>

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ThemeToggle } from '../common/ThemeToggle';
 import { Logo } from '../common/Logo';
+import { SocialFooterStrip } from '../common/SocialFooterStrip';
 
 export type AppTab = 'overview' | 'new-scan' | 'findings' | 'agents' | 'playbooks' | 'reports' | 'settings';
 
@@ -139,8 +140,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         </header>
 
         {/* Tab Content View */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8">
-          {children}
+        <main className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col justify-between">
+          <div>
+            {children}
+          </div>
+
+          {/* Social Links & Proprietor Footer in App Console */}
+          <div className="mt-16 pt-8 border-t border-slate-200/80 dark:border-slate-800/80 flex justify-center">
+            <SocialFooterStrip />
+          </div>
         </main>
       </div>
     </div>
