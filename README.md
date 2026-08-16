@@ -7,19 +7,18 @@
   <p align="center">
     <strong>Open-Source & Community Edition of Trinetra AI</strong>
     <br />
-    Designed & Architected by <strong>Rudraksh AGI</strong> · Proprietor: <strong>Aditya Kumar Mishra</strong>
+    Designed & Architected by Parent Company: <strong><a href="https://rudrakshai.in">Rudraksh AGI (rudrakshai.in)</a></strong> · Proprietor: <strong>Aditya Kumar Mishra</strong>
     <br />
     <em>Autonomous Multi-Agent AI Cybersecurity & Penetration Testing Toolkit.</em>
   </p>
 </p>
 
 <p align="center">
+  <a href="https://rudrakshai.in"><img src="https://img.shields.io/badge/Parent%20Company-Rudraksh%20AGI%20(rudrakshai.in)-purple" alt="Parent Company"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Rudraksh%20AGI%20Community%20(NC--SA)-blue.svg" alt="License"></a>
   <a href="#"><img src="https://img.shields.io/badge/Author-Aditya%20Kumar%20Mishra-orange" alt="Author"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Designed%20By-Rudraksh%20AGI-red" alt="Designed By"></a>
-  <a href="#"><img src="https://img.shields.io/badge/Origin-Trinetra%20AI%20Community%20Edition-purple" alt="Trinetra AI"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Origin-Trinetra%20AI%20Community%20Edition-red" alt="Trinetra AI"></a>
   <a href="#"><img src="https://img.shields.io/badge/MCP-Protocol%20Ready-sky?logo=anthropic" alt="MCP Ready"></a>
-  <a href="#"><img src="https://img.shields.io/badge/OASIS-SARIF%202.1.0-green" alt="SARIF 2.1.0"></a>
 </p>
 
 ---

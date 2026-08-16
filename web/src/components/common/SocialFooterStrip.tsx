@@ -3,6 +3,18 @@ import React from 'react';
 export const SocialFooterStrip: React.FC<{ className?: string }> = ({ className = '' }) => {
   const socialLinks = [
     {
+      name: 'Official Website (rudrakshai.in)',
+      url: 'https://rudrakshai.in',
+      icon: (
+        <svg className="w-4 h-4 fill-none stroke-current stroke-2" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="2" y1="12" x2="22" y2="12" />
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+        </svg>
+      ),
+      bg: 'hover:bg-brand-600 hover:text-white',
+    },
+    {
       name: 'X (Twitter)',
       url: 'https://twitter.com/rudraksh_agi',
       icon: (
@@ -56,16 +68,24 @@ export const SocialFooterStrip: React.FC<{ className?: string }> = ({ className 
 
   return (
     <div className={`flex flex-col items-center justify-center gap-3 select-none ${className}`}>
-      {/* Attribution Text */}
-      <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 font-sans">
+      {/* Attribution & Parent Company Link */}
+      <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex flex-wrap items-center justify-center gap-1.5 font-sans text-center">
+        <span>Parent Company:</span>
+        <a
+          href="https://rudrakshai.in"
+          target="_blank"
+          rel="noreferrer"
+          className="font-bold text-brand-600 dark:text-brand-400 hover:underline inline-flex items-center gap-1"
+        >
+          <span>Rudraksh AGI (rudrakshai.in)</span>
+        </a>
+        <span className="text-slate-300 dark:text-slate-600 hidden sm:inline">|</span>
         <span>Proprietor:</span>
         <span className="font-bold text-slate-900 dark:text-white">Aditya Kumar Mishra</span>
-        <span className="text-slate-300 dark:text-slate-600">|</span>
-        <span className="text-brand-600 dark:text-brand-400 font-bold">Rudraksh AGI</span>
       </div>
 
-      {/* 5 Circular Social Icons */}
-      <div className="flex items-center gap-3">
+      {/* 6 Circular Social & Web Icons */}
+      <div className="flex items-center gap-2.5 sm:gap-3">
         {socialLinks.map((s) => (
           <a
             key={s.name}

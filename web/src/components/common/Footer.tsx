@@ -12,7 +12,7 @@ export const Footer: React.FC = () => {
           <div className="col-span-2 space-y-3">
             <Logo size="md" />
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm leading-relaxed">
-              Community & Open-Source Edition of <strong>Trinetra AI</strong>. Designed and architected by <strong>Rudraksh AGI</strong> · Proprietor: <strong>Aditya Kumar Mishra</strong>.
+              Community & Open-Source Edition of <strong>Trinetra AI</strong>. Designed and architected by Parent Company <a href="https://rudrakshai.in" target="_blank" rel="noreferrer" className="text-brand-600 dark:text-brand-400 font-bold hover:underline">Rudraksh AGI (rudrakshai.in)</a> · Proprietor: <strong>Aditya Kumar Mishra</strong>.
             </p>
             <div className="flex items-center gap-2 pt-1 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
               <span className="inline-flex items-center gap-1">
