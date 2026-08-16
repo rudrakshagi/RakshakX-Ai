@@ -1,0 +1,54 @@
+RUDRAKSH AGI OPEN COMMUNITY LICENSE (Non-Commercial, Share-Alike, Mandatory Attribution)
+
+Copyright (c) 2026 Rudraksh AGI.
+Proprietor & Original Author: Aditya Kumar Mishra.
+Project Lineage: RakshakX / Rakshak AI (Open-Source & Community Edition of Trinetra AI).
+
+================================================================================
+TERMS AND CONDITIONS FOR USE, MODIFICATION, AND DISTRIBUTION
+================================================================================
+
+Permission is hereby granted, free of charge, to any person or organization 
+obtaining a copy of this software and associated documentation files (the "Software"), 
+to deal in the Software without restriction, subject to the following mandatory conditions:
+
+1. FREEDOM TO USE AND MODIFY
+   You may freely use, run, inspect, and modify the source code of this Software 
+   for educational, research, personal, and authorized security assessment purposes.
+
+2. MANDATORY SHARE-ALIKE (OPEN SOURCE DISTRIBUTION)
+   If you distribute, publish, deploy as a network service, or share any modifications, 
+   derivative works, or adaptations based on this Software:
+   a) You MUST make the complete, uncompiled source code of your modified version 
+      publicly available on a public repository (e.g., GitHub, GitLab) under the 
+      exact same terms and license.
+   b) Proprietary closed-source forks or private commercial repackaging are strictly prohibited.
+
+3. MANDATORY ATTRIBUTION & CREDITS
+   All copies, substantial portions, modified versions, derivative works, user interfaces, 
+   and documentation of the Software must conspicuously retain the following credit notice:
+   
+   "Originally created and designed by Rudraksh AGI (Proprietor: Aditya Kumar Mishra). 
+    Community Edition of Trinetra AI."
+
+   This notice must be prominently visible in:
+   - All source code file headers.
+   - User interfaces (Navbar, About/Settings dialog, and CLI banners).
+   - The primary README.md and documentation files.
+
+4. NON-COMMERCIAL RESTRICTION (NO RESELLING)
+   a) You are STRICTLY NOT ALLOWED to sell this Software, its source code, compiled binaries, 
+      or derivative works for monetary compensation or commercial profit.
+   b) You may not charge subscription fees, licensing fees, or paywalls for access to this Software 
+      or any fork derived from it.
+   c) Commercial licensing, enterprise OEM distribution, or exceptions require express 
+      written consent from the Proprietor (Aditya Kumar Mishra / Rudraksh AGI).
+
+5. DISCLAIMER OF WARRANTY & ETHICAL USE
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+   INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
+   PARTICULAR PURPOSE, AND NONINFRINGEMENT. 
+
+   THIS TOOL IS DESIGNED STRICTLY FOR AUTHORIZED SECURITY TESTING AND VULNERABILITY REMEDIATION. 
+   THE AUTHORS AND COPYRIGHT HOLDERS SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR 
+   LIABILITY ARISING FROM ANY UNAUTHORIZED USE OR MISUSE OF THE SOFTWARE.

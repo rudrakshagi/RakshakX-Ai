@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Logs & Database
+*.log
+*.sqlite3
+*.db
+rakshak_runs/
+.rakshak/
+.state/
+
+# Node.js & Vite
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+web/dist/
+web/node_modules/
+.eslintcache
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+rakshak.config.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
