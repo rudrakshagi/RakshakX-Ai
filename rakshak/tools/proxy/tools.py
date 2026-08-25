@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from agents import RunContextWrapper, function_tool
+
 from rakshak.tools.proxy import caido_api
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ async def list_requests(
     first: int = 30,
 ) -> str:
     """List captured HTTP requests from the Caido proxy with HTTPQL filtering.
-    
+
     Examples of HTTPQL syntax:
     - resp.code.gte:400 (all error responses)
     - req.method.eq:"POST" (all POST requests)

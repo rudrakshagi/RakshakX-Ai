@@ -44,6 +44,10 @@ export const SettingsView: React.FC = () => {
     } else if (newProv === 'gemini') {
       setModel('gemini/gemini-2.5-pro');
       setApiBase('');
+    } else if (newProv === 'opencode') {
+      setModel('openai/oc/nemotron-3.5-lightning-free');
+      setApiBase('http://localhost:8787/v1');
+      setApiKey('sk-dummy');
     } else if (newProv === 'ollama') {
       setModel('ollama/deepseek-r1');
       setApiBase('http://localhost:11434');
@@ -70,17 +74,20 @@ export const SettingsView: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const body: Record<string, unknown> = {
+        provider,
+        model,
+        api_base: apiBase,
+        max_budget_usd: budget,
+        use_mcp_ide_llm: useMcpLlm,
+      };
+      // Only send a key if the user actually entered one; otherwise the server
+      // preserves the currently stored key (seen as a masked placeholder).
+      if (apiKey) body.api_key = apiKey;
       const res = await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          provider,
-          model,
-          api_key: apiKey,
-          api_base: apiBase,
-          max_budget_usd: budget,
-          use_mcp_ide_llm: useMcpLlm,
-        }),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
         setSavedStatus('success');
@@ -166,6 +173,7 @@ export const SettingsView: React.FC = () => {
                 { id: 'openai', label: 'OpenAI', desc: 'GPT-4o, o3-mini' },
                 { id: 'anthropic', label: 'Anthropic', desc: 'Claude 3.7 / 3.5 Sonnet' },
                 { id: 'gemini', label: 'Google Gemini', desc: 'Gemini 2.5 Pro / Flash' },
+                { id: 'opencode', label: 'OpenCode Bridge', desc: 'oc/nemotron-3.5-lightning-free' },
                 { id: 'ollama', label: 'Ollama (Local)', desc: 'DeepSeek R1, Llama 3' },
                 { id: 'openrouter', label: 'OpenRouter', desc: 'Multi-provider routing' },
                 { id: 'custom', label: 'Custom Endpoint', desc: 'Any OpenAI-compatible API' },
@@ -231,12 +239,12 @@ export const SettingsView: React.FC = () => {
               </button>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
-              Keys are stored locally on your machine in <code>rakshak.config.json</code> and never transmitted to external third parties.
+              Keys are stored locally on your machine in <code>.rakshakx/config.json</code> and never transmitted to external third parties.
             </p>
           </div>
 
-          {/* API Base URL (For Ollama / Local / Custom) */}
-          {(provider === 'ollama' || provider === 'openrouter' || provider === 'custom') && (
+          {/* API Base URL (For Ollama / Local / Custom / OpenCode) */}
+          {(provider === 'ollama' || provider === 'openrouter' || provider === 'custom' || provider === 'opencode') && (
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
                 Custom API Base URL
@@ -277,7 +285,7 @@ export const SettingsView: React.FC = () => {
             {savedStatus ? (
               <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 font-mono">
                 <Check className="w-4 h-4" />
-                <span>Configuration saved to rakshak.config.json!</span>
+                <span>Configuration saved to .rakshakx/config.json!</span>
               </div>
             ) : (
               <div className="text-xs text-slate-400">

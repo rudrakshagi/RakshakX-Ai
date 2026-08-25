@@ -72,6 +72,13 @@ class ReportUsageHooks:
     def on_turn_complete(self, usage: Any) -> None:
         """Process turn token usage and verify against budget ceilings."""
         self.total_turns += 1
+        if usage and hasattr(usage, "total_tokens"):
+            logger.info(
+                "Turn tokens: prompt=%s completion=%s (total=%s)",
+                getattr(usage, "prompt_tokens", "?"),
+                getattr(usage, "completion_tokens", "?"),
+                usage.total_tokens,
+            )
         if self.total_turns > self.max_turns:
             raise BudgetExceededError(f"Exceeded max allowed turns ({self.max_turns}) for this scan.")
 

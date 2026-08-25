@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileCheck, FileSpreadsheet, FileText, Download, Check, ExternalLink } from 'lucide-react';
 import { VulnerabilityFinding } from '../../types';
 
@@ -8,10 +8,51 @@ interface ReportsCenterProps {
 
 export const ReportsCenter: React.FC<ReportsCenterProps> = ({ findings }) => {
   const [activeExport, setActiveExport] = useState<string | null>(null);
+  const [markdownPreview, setMarkdownPreview] = useState<string>(
+`# RakshakX Security Assessment Report: session_8821
+
+**Target**: https://example.com  
+**Mode**: DEEP BLACK-BOX ASSESSMENT  
+**Total Verified Findings**: ${findings.length}  
+
+---
+
+## 1. Executive Summary
+RakshakX conducted an autonomous multi-agent penetration test against https://example.com. The assessment identified ${findings.filter(f => f.severity === 'critical').length} Critical, ${findings.filter(f => f.severity === 'high').length} High, and ${findings.filter(f => f.severity === 'medium').length} Medium severity vulnerabilities. All findings were dynamically reproduced inside an isolated Kali Linux sandbox.
+
+## 2. Methodology & Observability
+All network requests were captured and analyzed through a local Caido HTTP/HTTPS proxy daemon on port 48080. Child agents were coordinated using asynchronous mailboxes.`);
+
+  useEffect(() => {
+    fetch('/api/report')
+      .then(res => (res.ok ? res.text() : null))
+      .then(text => { if (text) setMarkdownPreview(text); })
+      .catch(() => {});
+  }, []);
 
   const handleExport = (type: string) => {
     setActiveExport(type);
     setTimeout(() => setActiveExport(null), 2500);
+
+    if (type === 'sarif') {
+      window.open('/api/sarif', '_blank');
+    } else if (type === 'pdf') {
+      window.open('/api/pdf', '_blank');
+    } else if (type === 'md') {
+      fetch('/api/report')
+        .then(res => (res.ok ? res.text() : null))
+        .then(text => {
+          if (!text) return;
+          const blob = new Blob([text], { type: 'text/markdown' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'report.md';
+          a.click();
+          URL.revokeObjectURL(url);
+        })
+        .catch(() => {});
+    }
   };
 
   return (
@@ -118,19 +159,7 @@ export const ReportsCenter: React.FC<ReportsCenterProps> = ({ findings }) => {
           Live Report Markdown Preview
         </h3>
         <div className="p-5 rounded-xl bg-slate-50 dark:bg-[#121B2D] border border-slate-200 dark:border-slate-700/80 font-mono text-xs text-slate-800 dark:text-slate-200 leading-relaxed overflow-x-auto whitespace-pre-wrap">
-{`# RakshakX Security Assessment Report: session_8821
-
-**Target**: https://example.com  
-**Mode**: DEEP BLACK-BOX ASSESSMENT  
-**Total Verified Findings**: ${findings.length}  
-
----
-
-## 1. Executive Summary
-RakshakX conducted an autonomous multi-agent penetration test against https://example.com. The assessment identified ${findings.filter(f => f.severity === 'critical').length} Critical, ${findings.filter(f => f.severity === 'high').length} High, and ${findings.filter(f => f.severity === 'medium').length} Medium severity vulnerabilities. All findings were dynamically reproduced inside an isolated Kali Linux sandbox.
-
-## 2. Methodology & Observability
-All network requests were captured and analyzed through a local Caido HTTP/HTTPS proxy daemon on port 48080. Child agents were coordinated using asynchronous mailboxes.`}
+{markdownPreview}
         </div>
       </div>
     </div>

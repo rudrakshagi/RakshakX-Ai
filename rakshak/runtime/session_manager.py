@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import logging
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from docker.models.containers import Container
+
 from rakshak.config.settings import load_settings
 from rakshak.runtime.caido_bootstrap import bootstrap_caido
 from rakshak.runtime.docker_client import DockerSandboxClient
+from rakshak.runtime.sdk_session import SDKSandboxSession
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +28,7 @@ def _find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 @dataclass(slots=True)
@@ -65,6 +68,7 @@ class SandboxSessionBundle:
     """Bundle containing the active session, docker client, container, and proxy client."""
     scan_id: str
     session: SandboxSession
+    sdk_session: SDKSandboxSession
     container: Container
     caido_client: Any | None
     host_proxy_port: int | None
@@ -107,7 +111,9 @@ async def create_or_reuse(
 
     # Allocate host port for Caido proxy
     host_port = _find_free_port() if settings.runtime.enable_caido else None
-    ports_map = {f"{_CONTAINER_CAIDO_PORT}/tcp": host_port} if host_port else {}
+    ports_map: dict[str, int | tuple[str, int]] = (
+        {f"{_CONTAINER_CAIDO_PORT}/tcp": host_port} if host_port else {}
+    )
 
     container_name = f"rakshak-{scan_id}"
     report(f"Creating isolated sandbox container '{container_name}'...")
@@ -121,9 +127,14 @@ async def create_or_reuse(
 
     session = SandboxSession(container=container, docker_client=docker_client)
 
+    sdk_session = SDKSandboxSession(
+        container=container,
+        docker_client=docker_client,
+    )
+
     # Ingest extra seed files into workspace
     for extra in extra_files or []:
-        rel_path = extra.get("workspace_path", "").lstrip("/workspace/").lstrip("/")
+        rel_path = extra.get("workspace_path", "").removeprefix("/workspace/").removeprefix("/")
         content = extra.get("content", "")
         if rel_path and content:
             await session.write(f"/workspace/{rel_path}", content)
@@ -140,6 +151,7 @@ async def create_or_reuse(
     bundle = SandboxSessionBundle(
         scan_id=scan_id,
         session=session,
+        sdk_session=sdk_session,
         container=container,
         caido_client=caido_client,
         host_proxy_port=host_port,

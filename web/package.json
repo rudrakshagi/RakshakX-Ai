@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"cd ../opencode-bridge && node server.js\" \"vite --host\" \"cd .. && PYTHONPATH=. .venv/bin/python -c 'from rakshak.interface.viewer.server import start_viewer_server; start_viewer_server(\\\"latest\\\", port=8080)'\"",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
@@ -24,6 +24,10 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^6.0.3"
+    "vite": "^6.0.3",
+    "concurrently": "^9.0.1"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
   }
 }

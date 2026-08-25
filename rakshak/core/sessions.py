@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Iterator, cast
+from typing import TYPE_CHECKING, Any, cast
 from weakref import WeakKeyDictionary
 
 from agents.items import ItemHelpers
@@ -148,7 +149,7 @@ async def replace_session_items(
         except Exception:
             logger.exception("Failed to replace session items; restoring original history")
             await session.clear_session()
-            await session.add_items(cast("list[TResponseInputItem]", original))
+            await session.add_items(original)
             raise
 
 

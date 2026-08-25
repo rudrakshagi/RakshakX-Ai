@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import contextlib
-import io
-from pathlib import Path
 import logging
 import uuid
-from typing import Any
+from typing import Any, cast
 
-from agents import RunConfig
+from agents import ModelSettings, RunConfig
 from agents.sandbox import SandboxRunConfig
 
 from rakshak.agents.factory import build_rakshak_agent, make_child_factory
-from rakshak.config.loader import load_settings
+from rakshak.config import load_settings
 from rakshak.config.models import RakshakProvider, configure_model_defaults
 from rakshak.core.agents import AgentCoordinator
-from rakshak.core.execution import run_agent_loop, spawn_child_agent as start_child_agent
+from rakshak.core.execution import run_agent_loop
+from rakshak.core.execution import spawn_child_agent as start_child_agent
 from rakshak.core.hooks import ReportUsageHooks
 from rakshak.core.paths import run_dir_for, runtime_state_dir
 from rakshak.core.sessions import open_agent_session
@@ -27,6 +26,28 @@ from rakshak.tools.output_store import WORKSPACE_SPILL_DIR, configure_spill_writ
 from rakshak.tools.todo.tools import hydrate_todos_from_disk
 
 logger = logging.getLogger(__name__)
+
+
+def _build_model_settings(settings: Any) -> ModelSettings:
+    """Build capped model settings to stay within low-budget provider rate limits."""
+    kwargs: dict[str, Any] = {}
+    temperature = getattr(settings.llm, "temperature", None)
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    reasoning_effort = getattr(settings.llm, "reasoning_effort", None)
+    if reasoning_effort:
+        kwargs["extra_body"] = {"reasoning_effort": reasoning_effort}
+    try:
+        import importlib.util
+
+        if (
+            importlib.util.find_spec("agents.extensions.models.litellm_model") is not None
+            and getattr(settings.llm, "model", "").startswith("groq/")
+        ):
+            kwargs["max_tokens"] = 4096
+    except (ImportError, ModuleNotFoundError):
+        pass
+    return ModelSettings(**kwargs)
 
 
 async def run_rakshak_scan(
@@ -88,13 +109,17 @@ async def run_rakshak_scan(
 
     configure_spill_writer(_spill_to_sandbox)
 
-    sessions_to_close = []
+    sessions_to_close: list[Any] = []
 
     try:
         run_config = RunConfig(
             model=resolved_model,
             model_provider=RakshakProvider(settings),
-            sandbox=SandboxRunConfig(client=bundle.session.docker_client, session=bundle.session),
+            model_settings=_build_model_settings(settings),
+            sandbox=SandboxRunConfig(
+                client=cast(Any, bundle.session.docker_client),
+                session=bundle.sdk_session,
+            ),
             tool_not_found_behavior="return_error_to_model",
         )
 

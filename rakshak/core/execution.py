@@ -5,21 +5,51 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable
 from typing import Any
 
 from agents import RunConfig, Runner
-from agents.exceptions import AgentsException, MaxTurnsExceeded
+from agents.exceptions import MaxTurnsExceeded
+
 from rakshak.core.agents import AgentCoordinator
 from rakshak.core.hooks import ReportUsageHooks
 from rakshak.core.sessions import (
     enforce_image_budget,
     open_agent_session,
     seed_initial_input,
-    strip_all_images_from_session,
 )
 from rakshak.llm.compaction import is_context_overflow, maybe_compact
 
 logger = logging.getLogger(__name__)
+
+
+def _is_rate_limited(exc: Exception) -> bool:
+    import re
+
+    name = type(exc).__name__.lower()
+    text = str(exc).lower()
+    if "ratelimit" in name or "rate_limit" in text:
+        return True
+    match = re.search(r"please try again in (\d+(?:\.\d+)?)s", text)
+    return match is not None
+
+
+def _rate_limit_backoff(exc: Exception) -> float:
+    import re
+
+    match = re.search(r"please try again in (\d+(?:\.\d+)?)s", str(exc))
+    if match:
+        return max(float(match.group(1)) + 3.0, 65.0)
+    return 65.0
+
+
+def _maybe_pace_turn(run_config: RunConfig) -> Awaitable[None]:
+    """Wait so consecutive turns land in separate provider rate-limit windows."""
+    model = str(getattr(run_config, "model", ""))
+    if not model.startswith("groq/"):
+        return asyncio.sleep(0)
+
+    return asyncio.sleep(30.0)
 
 
 async def run_agent_loop(
@@ -46,6 +76,16 @@ async def run_agent_loop(
             logger.info("Agent %s stopping due to global budget ceiling.", agent_id)
             break
 
+        # Pace turns on low-TPM providers so each request fits a fresh rate window,
+        # but skip the very first turn since no request has been issued yet.
+        if turns_taken > 0:
+            await _maybe_pace_turn(run_config)
+
+        # Keep history well under the provider's per-request token cap.
+        compacted = await maybe_compact(session, model=str(run_config.model), force=False)
+        if compacted:
+            logger.info("Agent %s compacted session proactively before turn.", agent_id)
+
         # Drain any incoming mailbox messages into the active SQLite session
         await coordinator.consume_pending(agent_id)
         await coordinator.mark_running(agent_id)
@@ -56,7 +96,7 @@ async def run_agent_loop(
 
             # Run SDK model turn
             result = await Runner.run(
-                agent=agent,
+                starting_agent=agent,
                 input=current_input,
                 session=session,
                 run_config=run_config,
@@ -67,12 +107,25 @@ async def run_agent_loop(
             if hooks:
                 hooks.on_turn_complete(getattr(result, "usage", None))
 
-            # Check if agent called a terminal lifecycle tool (finish_scan / agent_finish)
-            if result.final_output is not None:
+            # Check if agent called a terminal lifecycle tool (finish_scan / agent_finish).
+            # Use a truthy check: an empty string is NOT terminal, otherwise scans that
+            # produce an empty final response get cut off mid-investigation.
+            if result.final_output:
                 logger.info("Agent %s reached terminal output: %s", agent_id, str(result.final_output)[:100])
                 return result
 
             # Reset input for next turn (subsequent turns drive from session history)
+            current_input = []
+
+        except MaxTurnsExceeded as exc:
+            # Per-turn SDK budget hit: the model made a tool call whose result is now
+            # in the session; the outer loop drives the next SDK turn from history.
+            logger.info(
+                "Agent %s SDK turn budgeted (max_turns=1); continuing from session history (%s).",
+                agent_id,
+                exc,
+            )
+            turns_taken += 1
             current_input = []
 
         except Exception as exc:
@@ -85,8 +138,16 @@ async def run_agent_loop(
                 )
                 if compacted:
                     continue
+            delay = 2.0
+            if _is_rate_limited(exc):
+                delay = _rate_limit_backoff(exc)
+                logger.warning(
+                    "Rate limit on agent %s. Backing off %.1fs before retrying.",
+                    agent_id,
+                    delay,
+                )
             logger.exception("Turn failed on agent %s: %s", agent_id, exc)
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(delay)
             turns_taken += 1
 
     return None

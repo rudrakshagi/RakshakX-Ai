@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from rakshak.core.sessions import session_write_lock
 
@@ -205,10 +207,8 @@ class AgentCoordinator:
         # If target agent is in the middle of streaming a turn, interrupt it immediately
         # so it consumes this high-priority message on the next turn cycle
         if stream is not None and interrupt and interrupt_on_message:
-            try:
+            with contextlib.suppress(Exception):
                 stream.cancel(mode="immediate")
-            except Exception:
-                pass
 
         await self._maybe_snapshot()
         return True

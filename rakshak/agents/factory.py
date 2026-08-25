@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
+
 from agents.agent import ToolsToFinalOutputResult
 from agents.sandbox import SandboxAgent
-from agents.sandbox.capabilities import Filesystem, Shell
-from agents.tool import FunctionTool, Tool
+from agents.sandbox.capabilities import Shell
+from agents.tool import Tool
 
 from rakshak.agents.prompt import render_system_prompt
 from rakshak.tools.agents_graph.tools import (
@@ -26,6 +28,24 @@ from rakshak.tools.thinking.tool import think
 from rakshak.tools.todo.tools import create_todo, list_todos, mark_todo_done
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_tool_schema(tool: Tool) -> Tool:
+    """Make generated JSON schemas acceptable to strict providers (e.g. Groq)."""
+    schema = getattr(tool, "params_json_schema", None)
+    if not isinstance(schema, dict):
+        return tool
+    schema.setdefault("type", "object")
+    schema["additionalProperties"] = False
+    props = schema.get("properties")
+    if not props:
+        schema.pop("required", None)
+    return tool
+
+
+def _normalize_tools(tools: list[Tool]) -> list[Tool]:
+    return [_normalize_tool_schema(t) for t in tools]
+
 
 _BASE_TOOLS: tuple[Tool, ...] = (
     think,
@@ -65,7 +85,7 @@ def build_rakshak_agent(
     extra_tools: Sequence[Tool] | None = None,
 ) -> SandboxAgent[Any]:
     """Construct an addressable SandboxAgent equipped with offensive tools and sandbox access."""
-    instructions = render_system_prompt(
+    base_instructions = render_system_prompt(
         skills=skills,
         is_root=is_root,
         scan_mode=scan_mode,
@@ -73,7 +93,7 @@ def build_rakshak_agent(
     )
 
     lifecycle_tool = finish_scan if is_root else agent_finish
-    tools: list[Tool] = [*_BASE_TOOLS, *(extra_tools or []), lifecycle_tool]
+    tools: list[Tool] = _normalize_tools([*_BASE_TOOLS, *(extra_tools or []), lifecycle_tool])
 
     logger.info(
         "Built %s agent '%s' (tools=%d, skills=%d, whitebox=%s)",
@@ -86,10 +106,11 @@ def build_rakshak_agent(
 
     return SandboxAgent(
         name=name,
-        instructions=instructions,
+        base_instructions=base_instructions,
+        instructions="You are RakshakX, a web security scanning agent. Follow the base instructions.",
         tools=tools,
         tool_use_behavior=_finish_tool_use_behavior,
-        capabilities=[Filesystem(), Shell()],
+        capabilities=[Shell()],
     )
 
 

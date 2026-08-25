@@ -1,0 +1,22 @@
+{
+  "name": "opencode-bridge",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "OpenAI-compatible HTTP bridge to OpenCode Zen, with dynamic oc/<model> passthrough discovery.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test:models": "node scripts/test-models.js",
+    "test:chat": "node scripts/test-chat.js",
+    "test:stream": "node scripts/test-stream.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

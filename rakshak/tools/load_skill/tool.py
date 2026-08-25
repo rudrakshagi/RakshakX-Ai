@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
 from agents import RunContextWrapper, function_tool
 
 _SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
@@ -32,7 +33,7 @@ def _list_all_skills() -> list[str]:
 @function_tool(timeout=10)
 async def load_skill(ctx: RunContextWrapper, skill_name: str) -> str:
     """Load specialized offensive methodology and exploit playbook for a vulnerability or tool.
-    
+
     Examples: 'authentication_jwt', 'idor', 'sql_injection', 'ssrf', 'race_conditions'.
     """
     skill_file = _find_skill_file(skill_name)

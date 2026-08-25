@@ -171,7 +171,7 @@ RakshakX is model-agnostic and connects to any cloud or local LLM via LiteLLM.
    - **Google Gemini**: `gemini/gemini-2.5-pro`, `gemini/gemini-2.0-flash`
    - **Ollama (Local / Open-Source)**: `ollama/deepseek-r1`, `ollama/llama3.3` (Base URL: `http://localhost:11434`)
    - **OpenRouter / Groq / Custom LiteLLM**
-4. Enter your API Key and click **"Save LLM Settings"** (automatically persisted in `rakshak.config.json`).
+4. Enter your API Key and click **"Save LLM Settings"** (automatically persisted in `.rakshakx/config.json`).
 
 ### Option B: Terminal Environment Variables
 
@@ -290,7 +290,7 @@ RakshakX/
 │   ├── package.json
 │   └── vite.config.ts
 ├── launch.py                                  # Unified 1-command platform runner
-├── rakshak.config.json                        # Local LLM & budget configuration
+├── .rakshakx/config.json                     # Local LLM & budget configuration
 ├── README.md
 └── LICENSE                                    # Rudraksh AGI Community License (Non-Commercial, Share-Alike)
 ```

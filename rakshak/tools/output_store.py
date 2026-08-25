@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ def bound_text(
 
     total_lines = len(lines)
     remaining_lines = max(0, total_lines - max_lines)
-    
+
     notice = (
         f"\n\n[... Output truncated: showing first {min(len(kept_lines), max_lines)} lines "
         f"({len(truncated_str.encode('utf-8'))} bytes) of {total_lines} total lines "

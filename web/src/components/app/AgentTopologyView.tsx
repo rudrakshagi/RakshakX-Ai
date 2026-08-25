@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { INITIAL_AGENTS } from '../../data/mockScanData';
 import { Network, Cpu, Mail, Send, CheckCircle2, Clock, Sparkles } from 'lucide-react';
 import { AgentNode } from '../../types';
@@ -8,9 +8,45 @@ export const AgentTopologyView: React.FC = () => {
   const [steerMsg, setSteerMsg] = useState('');
   const [sentFeedback, setSentFeedback] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAgents() {
+      try {
+        const res = await fetch('/api/agents');
+        if (!res.ok) return;
+        const data = await res.json();
+        const names = data.names || {};
+        if (Object.keys(names).length === 0 || cancelled) return;
+        const statuses = data.statuses || {};
+        const meta = data.metadata || {};
+        setAgents(Object.keys(names).map(aid => ({
+          id: aid,
+          name: names[aid],
+          role: aid === 'root_01' || aid === 'agent-root' ? 'Scope & Task Dispatcher' : 'Specialist Subagent',
+          status: (statuses[aid] || 'running').toLowerCase() as AgentNode['status'],
+          task: meta[aid]?.task || 'Autonomous reconnaissance and probing.',
+          parentId: data.parent_of?.[aid] || null,
+          messagesCount: meta[aid]?.pending_counts ?? 0,
+          skills: ['offensive_playbook'],
+        })));
+      } catch (e) {
+        // Backend offline, keep mock
+      }
+    }
+    loadAgents();
+    const interval = setInterval(loadAgents, 2000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
   const handleSendSteer = (e: React.FormEvent) => {
     e.preventDefault();
     if (!steerMsg.trim()) return;
+
+    fetch('/api/steer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instruction: steerMsg.trim() }),
+    }).catch(() => {});
 
     setSentFeedback(true);
     setSteerMsg('');

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
 from agents import RunContextWrapper, function_tool
 
 _NOTES: dict[str, str] = {}

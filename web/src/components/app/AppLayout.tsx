@@ -16,7 +16,7 @@ import { ThemeToggle } from '../common/ThemeToggle';
 import { Logo } from '../common/Logo';
 import { SocialFooterStrip } from '../common/SocialFooterStrip';
 
-export type AppTab = 'overview' | 'new-scan' | 'findings' | 'agents' | 'playbooks' | 'reports' | 'settings';
+export type AppTab = 'overview' | 'new-scan' | 'findings' | 'agents' | 'playbooks' | 'reports' | 'settings' | 'ai-chat';
 
 interface AppLayoutProps {
   currentTab: AppTab;
@@ -42,6 +42,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     { id: 'new-scan', label: 'New Scan', icon: PlusCircle },
     { id: 'findings', label: 'Findings Ledger', icon: Bug, count: verifiedFindingsCount },
     { id: 'agents', label: 'Agent Topology', icon: Network },
+    { id: 'ai-chat', label: 'AI Security Chat', icon: Bot },
     { id: 'playbooks', label: 'Playbooks & Skills', icon: BookOpen },
     { id: 'reports', label: 'Compliance Reports', icon: FileCheck },
     { id: 'settings', label: 'LLM & API Settings', icon: Settings },
@@ -140,15 +141,19 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         </header>
 
         {/* Tab Content View */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col justify-between">
-          <div>
+        <main className={`flex-1 p-6 md:p-8 flex flex-col justify-between ${
+          currentTab === 'ai-chat' ? 'overflow-hidden' : 'overflow-y-auto'
+        }`}>
+          <div className={currentTab === 'ai-chat' ? 'flex-1 flex flex-col min-h-0' : ''}>
             {children}
           </div>
 
           {/* Social Links & Proprietor Footer in App Console */}
-          <div className="mt-16 pt-8 border-t border-slate-200/80 dark:border-slate-800/80 flex justify-center">
-            <SocialFooterStrip />
-          </div>
+          {currentTab !== 'ai-chat' && (
+            <div className="mt-16 pt-8 border-t border-slate-200/80 dark:border-slate-800/80 flex justify-center">
+              <SocialFooterStrip />
+            </div>
+          )}
         </main>
       </div>
     </div>

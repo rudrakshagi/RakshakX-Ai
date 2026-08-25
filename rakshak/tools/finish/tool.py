@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+
 from agents import RunContextWrapper, function_tool
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ async def finish_scan(
     recommendations: str,
 ) -> str:
     """Finalize the security assessment and persist customer-facing reports.
-    
+
     ROOT AGENTS ONLY. Validates that all narrative sections are populated,
     finalizes findings in the report state, and signals scan completion.
     """

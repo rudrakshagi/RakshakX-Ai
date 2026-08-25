@@ -32,6 +32,7 @@ import { FindingsLedger } from './components/app/FindingsLedger';
 import { AgentTopologyView } from './components/app/AgentTopologyView';
 import { ReportsCenter } from './components/app/ReportsCenter';
 import { SettingsView } from './components/app/SettingsView';
+import { AiChatView } from './components/app/AiChatView';
 
 export function App() {
   const [currentView, setCurrentView] = useState<'landing' | 'app'>('landing');
@@ -274,6 +275,10 @@ export function App() {
 
           {appTab === 'settings' && (
             <SettingsView />
+          )}
+
+          {appTab === 'ai-chat' && (
+            <AiChatView />
           )}
         </AppLayout>
       )}

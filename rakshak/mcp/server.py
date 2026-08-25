@@ -11,7 +11,7 @@ import logging
 import sys
 from typing import Any
 
-from rakshak.core.paths import base_runs_dir, run_dir_for
+from rakshak.core.paths import base_runs_dir
 
 logger = logging.getLogger(__name__)
 

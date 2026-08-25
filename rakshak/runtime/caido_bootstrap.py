@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import httpx
 from typing import Any
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ async def bootstrap_caido(
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         ready = False
-        for attempt in range(1, retries + 1):
+        for _attempt in range(1, retries + 1):
             try:
                 res = await client.post(
                     graphql_url,
@@ -34,6 +35,8 @@ async def bootstrap_caido(
                 if res.status_code in (200, 400):
                     ready = True
                     break
+                # Daemon responding but not fully up yet (e.g. mid-boot 502/503): back off.
+                await asyncio.sleep(delay)
             except (httpx.ConnectError, httpx.TimeoutException):
                 await asyncio.sleep(delay)
 

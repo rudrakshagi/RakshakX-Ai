@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
-from rich.console import Console, Group
+
+from rich.console import Group
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
@@ -57,7 +58,7 @@ class ScanDashboard:
         # Header Panel
         elapsed = str(datetime.now(UTC) - self.start_time).split(".")[0]
         header_text = Text()
-        header_text.append(f" RakshakX Live Pentest | ", style="bold red")
+        header_text.append(" RakshakX Live Pentest | ", style="bold red")
         header_text.append(f"Scan ID: {self.scan_id} | ", style="bold cyan")
         header_text.append(f"Target: {self.target} | ", style="bold green")
         header_text.append(f"Mode: {self.mode} | ", style="bold yellow")

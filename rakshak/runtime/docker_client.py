@@ -66,6 +66,7 @@ class DockerSandboxClient:
         container = self._client.containers.create(
             image=image,
             name=name,
+            command=["sleep", "infinity"],
             detach=True,
             tty=True,
             stdin_open=True,
@@ -88,10 +89,7 @@ class DockerSandboxClient:
         environment: dict[str, str] | None = None,
     ) -> tuple[int, str]:
         """Execute a command in the container and return (exit_code, output_text)."""
-        if isinstance(cmd, str):
-            cmd_args = ["bash", "-c", cmd]
-        else:
-            cmd_args = cmd
+        cmd_args = ["bash", "-c", cmd] if isinstance(cmd, str) else cmd
 
         exec_res = container.exec_run(
             cmd=cmd_args,

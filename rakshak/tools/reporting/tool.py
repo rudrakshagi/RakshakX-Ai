@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
+
 from agents import RunContextWrapper, function_tool
 from cvss import CVSS3
 
@@ -37,7 +37,7 @@ def _calculate_cvss(breakdown: dict[str, str]) -> tuple[float, str, str]:
     return score, severity, vector
 
 
-@function_tool(timeout=60)
+@function_tool(timeout=60, strict_mode=False)
 async def create_vulnerability_report(
     ctx: RunContextWrapper,
     title: str,
@@ -52,7 +52,7 @@ async def create_vulnerability_report(
     remediation_patch: str | None = None,
 ) -> str:
     """Register a confirmed, PoC-verified vulnerability finding.
-    
+
     cvss_metrics requires keys: attack_vector (N/A/L/P), attack_complexity (L/H),
     privileges_required (N/L/H), user_interaction (N/R), scope (U/C),
     confidentiality (N/L/H), integrity (N/L/H), availability (N/L/H).

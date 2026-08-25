@@ -1,6 +1,10 @@
 """Configuration package for RakshakX."""
 
-from rakshak.config.models import RakshakProvider, configure_model_defaults, uses_chat_completions_tool_schema
+from rakshak.config.models import (
+    RakshakProvider,
+    configure_model_defaults,
+    uses_chat_completions_tool_schema,
+)
 from rakshak.config.settings import (
     DEFAULT_MAX_TURNS,
     DEFAULT_SANDBOX_IMAGE,

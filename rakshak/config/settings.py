@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 DEFAULT_MAX_TURNS: int = 150
 DEFAULT_SANDBOX_IMAGE: str = "rakshakx/sandbox:latest"
@@ -113,5 +113,30 @@ def get_settings() -> RakshakSettings:
 
 
 def load_settings() -> RakshakSettings:
-    """Alias for get_settings()."""
-    return get_settings()
+    """Return the cached global settings instance or load a new one with config overrides."""
+    global _GLOBAL_SETTINGS  # noqa: PLW0603
+    if _GLOBAL_SETTINGS is None:
+        import json
+        settings = RakshakSettings()
+        
+        config_path = Path(".rakshakx") / "config.json"
+        legacy_path = Path("rakshak.config.json")
+        config_file = config_path if config_path.exists() else (legacy_path if legacy_path.exists() else None)
+        
+        if config_file:
+            try:
+                cfg = json.loads(config_file.read_text(encoding="utf-8"))
+                if cfg.get("model"):
+                    settings.llm.model = cfg["model"]
+                if cfg.get("api_key"):
+                    settings.llm.api_key = cfg["api_key"]
+                if cfg.get("api_base"):
+                    settings.llm.api_base = cfg["api_base"]
+                if cfg.get("temperature") is not None:
+                    settings.llm.temperature = cfg["temperature"]
+                if cfg.get("max_budget_usd") is not None:
+                    settings.max_budget_usd = cfg["max_budget_usd"]
+            except Exception:
+                pass
+        _GLOBAL_SETTINGS = settings
+    return _GLOBAL_SETTINGS

@@ -44,7 +44,7 @@ RUN useradd -m -s /bin/bash pentester && \
 
 # Create application & tool directories
 RUN mkdir -p /home/pentester/tools /app/certs /workspace && \
-    chown -R pentester:pentester /app/certs /home/pentester/tools /workspace
+    chown -R pentester:pentester /app /home/pentester/tools /workspace
 
 # Install CLI security tools, compilers, and dependencies
 RUN apt-get update && \
@@ -108,6 +108,7 @@ COPY --from=gobuilder --chown=pentester:pentester /out/bin/ /home/pentester/go/b
 RUN nuclei -update-templates || true
 
 # Python CLI security tools via pipx
+ENV UV_HTTP_TIMEOUT=300
 RUN pipx install arjun && \
     pipx install dirsearch && \
     pipx inject dirsearch 'setuptools<81' && \

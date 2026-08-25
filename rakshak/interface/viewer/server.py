@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
 import os
 import platform
-import sys
+import threading
 import time
+import traceback
+import uuid
 from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,9 +24,50 @@ import psutil
 from rakshak.core.paths import base_runs_dir, run_dir_for, runtime_state_dir
 
 logger = logging.getLogger(__name__)
-CONFIG_FILE = Path("rakshak.config.json")
+CONFIG_FILE = Path(".rakshakx") / "config.json"
+_LEGACY_CONFIG_FILE = Path("rakshak.config.json")
 START_TIME = time.time()
 _CURR_PROCESS = psutil.Process()
+_active_scan_lock = threading.Lock()
+_active_scan_dir: Path | None = None
+
+
+def _set_active_scan(run_dir: Path | None) -> None:
+    """Record the most recently launched scan so GET handlers serve its live data."""
+    global _active_scan_dir
+    with _active_scan_lock:
+        _active_scan_dir = run_dir
+
+
+def _resolve_run_dir(view_run_dir: Path) -> Path:
+    """Return the active scan dir (latest launched) or fall back to the view scan dir."""
+    global _active_scan_dir
+    with _active_scan_lock:
+        if _active_scan_dir is not None and _active_scan_dir.exists():
+            return _active_scan_dir
+        _active_scan_dir = None
+    return view_run_dir
+
+
+def _resolve_artifact_dir(view_run_dir: Path, filename: str) -> Path:
+    """Prefer the active scan dir, but fall back to view dir when the artifact exists there."""
+    active = _resolve_run_dir(view_run_dir)
+    if (active / filename).exists():
+        return active
+    if (view_run_dir / filename).exists():
+        return view_run_dir
+    return active
+
+
+def _write_run_meta(run_dir: Path, **updates: Any) -> None:
+    meta_file = run_dir / "run_meta.json"
+    meta: dict[str, Any] = {}
+    if meta_file.exists():
+        with contextlib.suppress(Exception):
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    meta.update(updates)
+    with contextlib.suppress(Exception):
+        meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _get_system_telemetry() -> dict[str, Any]:
@@ -99,16 +144,21 @@ def _load_user_config() -> dict[str, Any]:
     default_cfg = {
         "provider": "openai",
         "model": os.getenv("RAKSHAK_LLM__MODEL", "openai/gpt-4o"),
-        "api_key": os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("GEMINI_API_KEY") or "",
+        "api_key": os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY") or "",
         "api_base": os.getenv("RAKSHAK_LLM__API_BASE", ""),
         "temperature": 0.2,
         "max_budget_usd": 10.0,
         "reasoning_effort": "medium",
         "use_mcp_ide_llm": False,
     }
+    config_source: Path | None = None
     if CONFIG_FILE.exists():
+        config_source = CONFIG_FILE
+    elif _LEGACY_CONFIG_FILE.exists():
+        config_source = _LEGACY_CONFIG_FILE
+    if config_source is not None:
         try:
-            saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            saved = json.loads(config_source.read_text(encoding="utf-8"))
             default_cfg.update(saved)
         except Exception:
             pass
@@ -116,7 +166,20 @@ def _load_user_config() -> dict[str, Any]:
 
 
 def _save_user_config(cfg: dict[str, Any]) -> None:
+    # Never overwrite a stored API key with an empty one. The web console only shows a
+    # masked key, so a Save without re-entering the key must preserve the existing value.
+    if not cfg.get("api_key"):
+        existing = _load_user_config()
+        existing.pop("masked_key", None)
+        existing.pop("is_key_configured", None)
+        cfg["api_key"] = existing.get("api_key") or ""
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    _apply_config_env(cfg)
+
+
+def _apply_config_env(cfg: dict[str, Any]) -> None:
+    """Push config values into process env so the scan runner's LiteLLM picks them up."""
     if cfg.get("model"):
         os.environ["RAKSHAK_LLM__MODEL"] = cfg["model"]
     if cfg.get("api_key"):
@@ -125,10 +188,38 @@ def _save_user_config(cfg: dict[str, Any]) -> None:
             os.environ["ANTHROPIC_API_KEY"] = cfg["api_key"]
         elif "gemini" in prov or "google" in cfg.get("model", "").lower():
             os.environ["GEMINI_API_KEY"] = cfg["api_key"]
+        elif "groq" in prov or cfg.get("model", "").lower().startswith("groq"):
+            os.environ["GROQ_API_KEY"] = cfg["api_key"]
+        elif "openrouter" in prov or cfg.get("model", "").lower().startswith("openrouter"):
+            os.environ["OPENROUTER_API_KEY"] = cfg["api_key"]
         else:
             os.environ["OPENAI_API_KEY"] = cfg["api_key"]
     if cfg.get("api_base"):
         os.environ["RAKSHAK_LLM__API_BASE"] = cfg["api_base"]
+
+
+def _run_scan_background(run_dir: Path, *, target: str, mode: str, prompt: str) -> None:
+    """Execute the real autonomous scan in a background thread, updating live status."""
+    scan_id = run_dir.name
+    _write_run_meta(run_dir, status="Running", started_at=datetime.now(UTC).isoformat())
+    started = time.time()
+    try:
+        from rakshak.core.runner import run_rakshak_scan
+
+        is_whitebox = "white" in mode.lower()
+        asyncio.run(run_rakshak_scan(
+            target=target,
+            scan_id=scan_id,
+            scan_mode="quick",
+            is_whitebox=is_whitebox,
+            max_budget_usd=3.0,
+            max_turns=30,
+        ))
+        duration = f"{int(time.time() - started) // 60}m {int(time.time() - started) % 60}s"
+        _write_run_meta(run_dir, status="Completed", duration=duration)
+    except Exception as exc:
+        logger.error("Background scan %s failed: %s\n%s", scan_id, exc, traceback.format_exc())
+        _write_run_meta(run_dir, status="Failed", error=str(exc))
 
 
 def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
@@ -171,7 +262,19 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 target = body_data.get("target", "example.com")
                 mode = body_data.get("mode", "Black Box")
                 prompt = body_data.get("prompt", "")
-                scan_id = f"scan_{int(time.time())}"
+                scan_id = f"scan-{uuid.uuid4().hex[:8]}"
+                new_run_dir = run_dir_for(scan_id)
+                with contextlib.suppress(Exception):
+                    new_run_dir.mkdir(parents=True, exist_ok=True)
+                _write_run_meta(new_run_dir, scan_id=scan_id, target=target, mode=mode,
+                                prompt=prompt, status="Queued")
+                _set_active_scan(new_run_dir)
+                threading.Thread(
+                    target=_run_scan_background,
+                    args=(new_run_dir,),
+                    kwargs={"target": target, "mode": mode, "prompt": prompt},
+                    daemon=True,
+                ).start()
                 _send_json({
                     "success": True,
                     "scan_id": scan_id,
@@ -218,22 +321,19 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/overview":
-                vuln_file = run_dir / "vulnerabilities.json"
+                active_run_dir = _resolve_run_dir(run_dir)
+                vuln_file = active_run_dir / "vulnerabilities.json"
                 vulns = []
                 if vuln_file.exists():
-                    try:
+                    with contextlib.suppress(Exception):
                         vulns = json.loads(vuln_file.read_text(encoding="utf-8"))
-                    except Exception:
-                        pass
 
-                state_dir = runtime_state_dir(run_dir)
+                state_dir = runtime_state_dir(active_run_dir)
                 agents_file = state_dir / "agents.json"
-                agents_data = {"names": {}, "statuses": {}, "metadata": {}}
+                agents_data: dict[str, Any] = {"names": {}, "statuses": {}, "metadata": {}}
                 if agents_file.exists():
-                    try:
+                    with contextlib.suppress(Exception):
                         agents_data = json.loads(agents_file.read_text(encoding="utf-8"))
-                    except Exception:
-                        pass
 
                 crit = sum(1 for v in vulns if (v.get("severity") or "").lower() == "critical")
                 high = sum(1 for v in vulns if (v.get("severity") or "").lower() == "high")
@@ -246,9 +346,9 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                     runs_count = len([d for d in runs_base.iterdir() if d.is_dir() and not d.name.startswith(".")])
 
                 _send_json({
-                    "scan_id": run_dir.name if run_dir.exists() else None,
-                    "target": "example.com" if run_dir.exists() else "No Active Target",
-                    "status": "Analyzing" if run_dir.exists() else "Idle",
+                    "scan_id": active_run_dir.name if active_run_dir.exists() else None,
+                    "target": "example.com" if active_run_dir.exists() else "No Active Target",
+                    "status": "Analyzing" if active_run_dir.exists() else "Idle",
                     "total_findings": len(vulns),
                     "total_scans": runs_count,
                     "active_agents": len(agents_data.get("names", {})),
@@ -270,46 +370,48 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                             v_file = d / "vulnerabilities.json"
                             v_count = 0
                             if v_file.exists():
-                                try:
+                                with contextlib.suppress(Exception):
                                     v_count = len(json.loads(v_file.read_text(encoding="utf-8")))
-                                except Exception:
-                                    pass
+                            meta = {}
+                            meta_file = d / "run_meta.json"
+                            if meta_file.exists():
+                                with contextlib.suppress(Exception):
+                                    meta = json.loads(meta_file.read_text(encoding="utf-8"))
                             runs_list.append({
                                 "id": d.name,
-                                "target": d.name,
-                                "mode": "Black Box",
-                                "status": "Completed",
-                                "duration": "14m 20s",
+                                "target": meta.get("target") or d.name,
+                                "mode": meta.get("mode") or "Black Box",
+                                "status": meta.get("status") or "Completed",
+                                "duration": meta.get("duration") or "14m 20s",
                                 "findings_count": v_count,
                             })
                 _send_json(runs_list)
                 return
 
             if path == "/api/vulnerabilities":
-                vuln_file = run_dir / "vulnerabilities.json"
+                active_run_dir = _resolve_run_dir(run_dir)
+                vuln_file = active_run_dir / "vulnerabilities.json"
                 data = []
                 if vuln_file.exists():
-                    try:
+                    with contextlib.suppress(Exception):
                         data = json.loads(vuln_file.read_text(encoding="utf-8"))
-                    except Exception:
-                        pass
                 _send_json(data)
                 return
 
             if path == "/api/agents":
-                state_dir = runtime_state_dir(run_dir)
+                active_run_dir = _resolve_run_dir(run_dir)
+                state_dir = runtime_state_dir(active_run_dir)
                 agents_file = state_dir / "agents.json"
-                data = {"names": {}, "statuses": {}, "metadata": {}}
+                agents_state: dict[str, Any] = {"names": {}, "statuses": {}, "metadata": {}}
                 if agents_file.exists():
-                    try:
-                        data = json.loads(agents_file.read_text(encoding="utf-8"))
-                    except Exception:
-                        pass
-                _send_json(data)
+                    with contextlib.suppress(Exception):
+                        agents_state = json.loads(agents_file.read_text(encoding="utf-8"))
+                _send_json(agents_state)
                 return
 
             if path == "/api/report":
-                report_file = run_dir / "report.md"
+                active_run_dir = _resolve_artifact_dir(run_dir, "report.md")
+                report_file = active_run_dir / "report.md"
                 content = report_file.read_text(encoding="utf-8") if report_file.exists() else "# RakshakX Assessment Report\n\nNo active scan report yet."
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "text/markdown; charset=utf-8")
@@ -319,7 +421,8 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/sarif":
-                sarif_file = run_dir / "sarif.json"
+                active_run_dir = _resolve_artifact_dir(run_dir, "sarif.json")
+                sarif_file = active_run_dir / "sarif.json"
                 if sarif_file.exists():
                     self.send_response(HTTPStatus.OK)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -332,7 +435,8 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/pdf":
-                pdf_file = run_dir / "report.pdf"
+                active_run_dir = _resolve_artifact_dir(run_dir, "report.pdf")
+                pdf_file = active_run_dir / "report.pdf"
                 if pdf_file.exists():
                     self.send_response(HTTPStatus.OK)
                     self.send_header("Content-Type", "application/pdf")
@@ -355,6 +459,8 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
 
 def start_viewer_server(scan_id: str, port: int = 8080) -> None:
     """Launch the backend API server."""
+    _apply_config_env(_load_user_config())
+    _set_active_scan(run_dir_for(scan_id))
     run_dir = run_dir_for(scan_id)
     handler_cls = _make_handler(run_dir)
     server = ThreadingHTTPServer(("0.0.0.0", port), handler_cls)
