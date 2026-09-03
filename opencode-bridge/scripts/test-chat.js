@@ -7,10 +7,18 @@ async function testChat() {
   // First, get a model to use
   const modelsRes = await fetch(`${BASE}/v1/models`);
   const modelsBody = await modelsRes.json();
-  const freeModel = modelsBody.data?.find(
-    (m) => m.id === "oc/big-pickle" || m.id.includes("-free")
-  );
-  const model = freeModel?.id ?? modelsBody.data?.[0]?.id;
+  // Prefer verified-working free models first (verified live 2026-09-03).
+  const PREFERRED = [
+    "oc/nemotron-3.5-lightning-free",
+    "oc/muse-spark-1.3-contributor-free",
+    "oc/laguna-s-2.1-free",
+    "oc/muse-spark-1.2-contributor-free",
+  ];
+  const ids = new Set((modelsBody.data ?? []).map((m) => m.id));
+  const model =
+    PREFERRED.find((id) => ids.has(id)) ??
+    modelsBody.data?.find((m) => m.id.includes("-free"))?.id ??
+    modelsBody.data?.[0]?.id;
 
   if (!model) {
     console.error("❌ No models available");

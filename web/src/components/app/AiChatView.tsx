@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Send, Sparkles, Terminal, Trash2, Cpu, RefreshCw, AlertTriangle, Search } from 'lucide-react';
+import { Bot, Send, Sparkles, Terminal, Trash2, Cpu, RefreshCw, AlertTriangle, Search, Brain, ChevronDown } from 'lucide-react';
+import { splitThinking } from './thinkingParser';
 
 interface Model {
   id: string;
@@ -9,9 +10,35 @@ interface Model {
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  /** Chain-of-thought streamed separately (delta.reasoning). Rendered in a think block. */
+  thinking?: string;
   model?: string;
   timestamp: string;
 }
+
+/** Collapsible block that holds the model's leaked chain-of-thought
+ *  separately from the final answer. Open while streaming, collapsed after. */
+const ThinkingBlock: React.FC<{ thinking: string; defaultOpen: boolean }> = ({ thinking, defaultOpen }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="mb-2 rounded-xl border border-violet-200/70 dark:border-violet-900/50 bg-violet-50/60 dark:bg-violet-950/20 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400 hover:bg-violet-100/60 dark:hover:bg-violet-900/20 transition-colors"
+      >
+        <Brain className="w-3.5 h-3.5" />
+        <span>Thinking</span>
+        <ChevronDown className={`w-3.5 h-3.5 ml-auto transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-3 pb-2.5 pt-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400 whitespace-pre-wrap select-text">
+          {thinking}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const AiChatView: React.FC = () => {
   const [models, setModels] = useState<Model[]>([]);
@@ -77,8 +104,21 @@ export const AiChatView: React.FC = () => {
       const data = await res.json();
       if (data && Array.isArray(data.data)) {
         setModels(data.data);
-        // Default to a free model if available
-        const defaultModel = data.data.find((m: Model) => m.id === 'oc/nemotron-3.5-lightning-free' || m.id.includes('-free'))?.id || data.data[0]?.id || '';
+        // Default to a verified-working free model, in preference order
+        // (verified live 2026-09-03; big-pickle/mimo/deepseek-free are
+        // rate-limited or unavailable upstream right now).
+        const PREFERRED_MODELS = [
+          'oc/nemotron-3.5-lightning-free',
+          'oc/muse-spark-1.3-contributor-free',
+          'oc/laguna-s-2.1-free',
+          'oc/muse-spark-1.2-contributor-free',
+        ];
+        const ids = new Set(data.data.map((m: Model) => m.id));
+        const defaultModel =
+          PREFERRED_MODELS.find((id) => ids.has(id)) ??
+          data.data.find((m: Model) => m.id.includes('-free') || m.id.includes('contributor-free'))?.id ??
+          data.data[0]?.id ??
+          '';
         setSelectedModel(defaultModel);
       } else {
         throw new Error('Invalid response format');
@@ -168,12 +208,21 @@ export const AiChatView: React.FC = () => {
         await handleStreamResponse(response);
       } else {
         const data = await response.json();
-        const assistantText = data.choices?.[0]?.message?.content || '';
+        const msg = data.choices?.[0]?.message;
+        const assistantText = msg?.content || '';
+        // Some providers put chain-of-thought in `message.reasoning`
+        // instead of (or in addition to) content.
+        const assistantThinking =
+          (typeof msg?.reasoning === 'string' && msg.reasoning) ||
+          (Array.isArray(msg?.reasoning_details)
+            ? msg.reasoning_details.map((p: any) => p?.text || '').join('')
+            : '');
         setMessages(prev => [
           ...prev,
           {
             role: 'assistant',
             content: assistantText,
+            thinking: assistantThinking || undefined,
             model: selectedModel,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           },
@@ -186,7 +235,7 @@ export const AiChatView: React.FC = () => {
         // Remove empty assistant placeholder bubble if it exists
         setMessages(prev => {
           const updated = [...prev];
-          if (updated.length > 0 && updated[updated.length - 1].role === 'assistant' && updated[updated.length - 1].content === '') {
+          if (updated.length > 0 && updated[updated.length - 1].role === 'assistant' && updated[updated.length - 1].content === '' && !updated[updated.length - 1].thinking) {
             updated.pop();
           }
           return updated;
@@ -203,6 +252,7 @@ export const AiChatView: React.FC = () => {
 
     const decoder = new TextDecoder('utf-8');
     let assistantMessageText = '';
+    let assistantThinkingText = '';
     
     // Add placeholder assistant message
     setMessages(prev => [
@@ -233,15 +283,25 @@ export const AiChatView: React.FC = () => {
 
         try {
           const parsed = JSON.parse(dataStr);
-          const delta = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.delta?.reasoning || '';
-          if (delta) {
-            assistantMessageText += delta;
+          const delta = parsed.choices?.[0]?.delta ?? {};
+          const contentDelta = delta.content || '';
+          // Chain-of-thought arrives separately as `reasoning`
+          // (string) or `reasoning_details[].text` — keep it OUT of
+          // the answer so the bubble never fills with thinking text.
+          let reasoningDelta = delta.reasoning || '';
+          if (!reasoningDelta && Array.isArray(delta.reasoning_details)) {
+            reasoningDelta = delta.reasoning_details.map((p: any) => p?.text || '').join('');
+          }
+          if (contentDelta) assistantMessageText += contentDelta;
+          if (reasoningDelta) assistantThinkingText += reasoningDelta;
+          if (contentDelta || reasoningDelta) {
             setMessages(prev => {
               const updated = [...prev];
               if (updated.length > 0) {
                 updated[updated.length - 1] = {
                   ...updated[updated.length - 1],
                   content: assistantMessageText,
+                  thinking: assistantThinkingText || undefined,
                 };
               }
               return updated;
@@ -261,7 +321,7 @@ export const AiChatView: React.FC = () => {
       // Remove empty assistant placeholder bubble if it exists
       setMessages(prev => {
         const updated = [...prev];
-        if (updated.length > 0 && updated[updated.length - 1].role === 'assistant' && updated[updated.length - 1].content === '') {
+        if (updated.length > 0 && updated[updated.length - 1].role === 'assistant' && updated[updated.length - 1].content === '' && !updated[updated.length - 1].thinking) {
           updated.pop();
         }
         return updated;
@@ -493,7 +553,21 @@ export const AiChatView: React.FC = () => {
                         : 'bg-slate-50 dark:bg-[#121B2D] border border-slate-200/60 dark:border-slate-800/80 text-slate-800 dark:text-slate-200 rounded-tl-none'
                     }`}
                   >
-                    {renderMessageContent(m.content)}
+                    {(() => {
+                      if (isUser) return renderMessageContent(m.content);
+                      // Prefer server-separated thinking; fall back to
+                      // splitting a merged reply (non-streaming models).
+                      const split = m.thinking ? null : splitThinking(m.content);
+                      const thinking = m.thinking || split?.thinking;
+                      const answer = m.thinking ? m.content : (split?.answer ?? m.content);
+                      const streamingThis = isLoading && index === messages.length - 1;
+                      return (
+                        <>
+                          {thinking && <ThinkingBlock thinking={thinking} defaultOpen={streamingThis} />}
+                          {renderMessageContent(answer)}
+                        </>
+                      );
+                    })()}
 
                     {/* Cursor typing blinking indicator */}
                     {!isUser && isLoading && index === messages.length - 1 && m.content === '' && (
