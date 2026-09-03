@@ -8,6 +8,7 @@ import { ModelRegistry } from "./lib/modelRegistry.js";
 import { OpenCodeConnector } from "./lib/opencodeConnector.js";
 import { buildModelsRouter } from "./routes/models.js";
 import { buildChatRouter } from "./routes/chat.js";
+import { buildAgentsRouter } from "./routes/agents.js";
 
 const PORT = process.env.PORT ?? 8787;
 const CACHE_TTL_MS = Number(process.env.MODEL_CACHE_TTL_MS ?? 10 * 60 * 1000);
@@ -22,6 +23,7 @@ const connector = new OpenCodeConnector(openCodeProvider, registry);
 
 app.use(buildModelsRouter(registry));
 app.use(buildChatRouter(registry, connector));
+app.use(buildAgentsRouter());
 
 app.get("/healthz", (req, res) => res.json({ ok: true, provider: openCodeProvider.id }));
 

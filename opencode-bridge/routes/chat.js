@@ -1,5 +1,6 @@
 // routes/chat.js
 import { Router } from "express";
+import { agentManager } from "./agents.js";
 
 /**
  * @param {import("../lib/modelRegistry.js").ModelRegistry} registry
@@ -19,6 +20,10 @@ export function buildChatRouter(registry, connector) {
         .status(400)
         .json({ error: { message: "`messages` must be a non-empty array", type: "invalid_request" } });
     }
+
+    // Trigger agent activity update based on user query
+    const lastUserMsg = body.messages[body.messages.length - 1]?.content || "";
+    agentManager.triggerActivity(lastUserMsg);
 
     // Optional: reject unknown models early with a clean 404 instead of
     // letting upstream error out. Comment this out if you'd rather let

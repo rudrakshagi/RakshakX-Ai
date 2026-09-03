@@ -17,9 +17,11 @@ export function buildModelsRouter(registry) {
         object: "list",
         data: models.map((m) => ({
           id: m.id,
+          name: m.name ?? m.id,
           object: "model",
           created: m.created ?? Math.floor(Date.now() / 1000),
           owned_by: m.owned_by ?? "opencode",
+          ...(m.targetFormat ? { targetFormat: m.targetFormat } : {}),
         })),
       });
     } catch (err) {

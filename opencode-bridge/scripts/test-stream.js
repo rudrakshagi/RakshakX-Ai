@@ -43,12 +43,16 @@ async function testStream() {
   let fullContent = "";
   let chunkCount = 0;
 
+  let buffer = "";
   for await (const chunk of res.body) {
-    const text = decoder.decode(chunk, { stream: true });
-    const lines = text.split("\n").filter((l) => l.startsWith("data: "));
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
 
     for (const line of lines) {
-      const data = line.slice(6).trim();
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data: ")) continue;
+      const data = trimmed.slice(6);
       if (data === "[DONE]") {
         console.log("\n---\n[DONE] received");
         continue;

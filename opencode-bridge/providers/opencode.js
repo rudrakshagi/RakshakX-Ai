@@ -31,9 +31,12 @@ export const openCodeProvider = {
     noAuth: true,
   },
 
-  // IMPORTANT: do NOT hardcode models here. The registry fetches them
-  // live from modelsFetcher.url on startup and on a refresh interval.
-  models: [],
+  // Muse Spark models are served by /zen/v1/responses; the rest stay on
+  // /chat/completions, so the format is declared per-model, not per-provider.
+  models: [
+    { id: "muse-spark-1.2-contributor-free", name: "Muse Spark 1.2 Contributor Free", targetFormat: "openai-responses" },
+    { id: "muse-spark-1.3-contributor-free", name: "Muse Spark 1.3 Contributor Free", targetFormat: "openai-responses" },
+  ],
 
   modelsFetcher: {
     url: "https://opencode.ai/zen/v1/models",
@@ -46,3 +49,4 @@ export const openCodeProvider = {
 };
 
 export default openCodeProvider;
+

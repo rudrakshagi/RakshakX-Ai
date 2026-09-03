@@ -20,6 +20,7 @@ import { PlaybooksSection } from './components/landing/PlaybooksSection';
 import { ContextCompaction } from './components/landing/ContextCompaction';
 import { SpillwaySection } from './components/landing/SpillwaySection';
 import { ReportingSection } from './components/landing/ReportingSection';
+import { BenchmarkSection } from './components/landing/BenchmarkSection';
 import { UseCasesSection } from './components/landing/UseCasesSection';
 import { OpenSourceSection } from './components/landing/OpenSourceSection';
 import { FinalCtaSection } from './components/landing/FinalCtaSection';
@@ -239,47 +240,8 @@ export function App() {
 
             {/* 14. Benchmark & Validation Protocol v2.0 */}
             <div id="benchmark">
-              {/* Lazy import to avoid heavy dep; use dynamic import via existing component */}
+              <BenchmarkSection scorecard={landingScorecard} onViewConsole={() => { setCurrentView('app'); setAppTab('benchmarks'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
             </div>
-            {/* Render BenchmarkSection inline without extra import churn */}
-            <section className="py-16 bg-white dark:bg-[#0B0F1A] border-y border-slate-200 dark:border-slate-800">
-              <div className="max-w-7xl mx-auto px-6">
-                <div className="inline-flex items-center gap-2 text-xs font-mono tracking-widest text-slate-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> RESEARCH / BENCHMARKS
-                </div>
-                <h2 className="text-3xl font-bold mt-3 text-slate-900 dark:text-white">Benchmark & Validation Protocol v2.0</h2>
-                <p className="mt-3 text-sm text-slate-600 dark:text-slate-300 max-w-3xl">
-                  Reproducible, evidence-backed measurements of RakshakX Community Edition. Detailed results are published under Research / Benchmarks in the product console. The company site shows only a concise verified summary with a link to the full report. See <span className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">docs/BENCHMARK_V2_PROTOCOL.md</span>.
-                </p>
-                <div className="mt-1 flex items-center gap-2 text-[10px] font-mono">
-                  <span className={`w-1.5 h-1.5 rounded-full ${landingScorecard ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                  <span className={landingScorecard ? 'text-emerald-600' : 'text-amber-600'}>
-                    {landingScorecard ? `Live: ${landingScorecard.scan_id} • ${landingScorecard.target} • TP ${landingScorecard.tp} FP ${landingScorecard.fp} FN ${landingScorecard.fn}` : 'Offline: showing formula • live via /api/benchmark/scorecard'}
-                  </span>
-                </div>
-                <div className="mt-8 grid md:grid-cols-4 gap-4">
-                  {[
-                    { k: 'Precision', v: landingScorecard ? landingScorecard.precision.toFixed(3) : 'TP/(TP+FP)', sub: landingScorecard ? `TP ${landingScorecard.tp}` : 'Live when benchmark available' },
-                    { k: 'Recall', v: landingScorecard ? landingScorecard.recall.toFixed(3) : 'TP/(TP+FN)', sub: landingScorecard ? `FN ${landingScorecard.fn}` : 'Live when benchmark available' },
-                    { k: 'F1', v: landingScorecard ? landingScorecard.f1.toFixed(3) : '2PR/(P+R)', sub: landingScorecard ? `${landingScorecard.total_predictions} preds` : 'Live when benchmark available' },
-                    { k: 'Verification Rate', v: landingScorecard ? landingScorecard.verification_rate.toFixed(3) : 'Confirmed/candidates', sub: landingScorecard ? `${landingScorecard.verification_rate.toFixed(2)}` : 'Live when benchmark available' },
-                  ].map((c: any) => (
-                    <div key={c.k} className="rounded-2xl border border-slate-200 dark:border-slate-800 p-5 bg-slate-50 dark:bg-[#121B2D]">
-                      <div className="text-xs font-bold tracking-widest text-slate-500">{c.k}</div>
-                      <div className="font-mono text-sm mt-1">{c.v}</div>
-                      <div className="text-[10px] text-slate-400 mt-1">{c.sub}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-8 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 p-5 text-xs leading-relaxed text-slate-700 dark:text-slate-300">
-                  <span className="font-bold">Integrity Statement:</span> The benchmark measures RakshakX on selected controlled environments and does not establish universal vulnerability detection, zero-day detection, enterprise-scale performance, or security of arbitrary real-world systems.
-                </div>
-                <div className="mt-6 flex flex-wrap gap-3 text-xs">
-                  <button onClick={() => { setCurrentView('app'); setAppTab('benchmarks'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="px-4 py-2 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-semibold">View Benchmarks in Console →</button>
-                  <span className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">Primary: Juice Shop 17.2.1 · DVWA 2.0 · Metasploitable2</span>
-                </div>
-              </div>
-            </section>
 
             {/* 15. Use Cases */}
             <UseCasesSection />
