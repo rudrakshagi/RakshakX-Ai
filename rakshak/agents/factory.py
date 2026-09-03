@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -103,6 +104,72 @@ def _finish_tool_use_behavior(ctx: Any, tool_results: list[Any]) -> ToolsToFinal
     return ToolsToFinalOutputResult(is_final_output=False, final_output=None)
 
 
+_EXEC_COMMAND_CONTRACT = (
+    "Runs a command in a PTY, returning output or a session ID for ongoing interaction. "
+    'Arguments JSON shape: {"cmd": "<shell command string, REQUIRED>", '
+    '"workdir": "<optional directory, defaults to turn cwd>", "tty": false, '
+    '"shell": "<optional shell binary path as a STRING, e.g. \\"/bin/bash\\"; '
+    'OMIT this field unless you need a specific binary>"}. '
+    "IMPORTANT: `shell` must be a string path or omitted entirely — NEVER send a boolean "
+    "(sending `true`/`false` fails validation and kills the turn). "
+    'Example: {"cmd": "curl -sI https://example.com/", "workdir": "/workspace", "tty": false}.'
+)
+
+_SHELL_PROP_CONTRACT = (
+    "Optional shell binary path as a STRING (e.g. \"/bin/bash\"). "
+    "Omit this field to use the default shell. NEVER send true/false."
+)
+
+
+def _configure_shell_tools(toolset: Any) -> None:
+    """Harden the SDK Shell capability tools against the observed `shell: true` failure.
+
+    During the rudra-passive live run the model repeatedly sent a boolean `shell`
+    flag to `exec_command`, but the SDK schema requires a string-or-omitted value.
+    Every attempt raised a pydantic ValidationError and killed the turn in a loop.
+    This configurator (wired via ``Shell(configure_tools=...)``) does two things:
+
+    1. Rewrites the tool + `shell`-property descriptions with an exact JSON
+       contract, example, and an explicit never-boolean warning.
+    2. Wraps ``on_invoke_tool`` with a defensive coercion that drops a boolean
+       ``shell`` key before the SDK validator sees it, so one confused model
+       call degrades to a default-shell run instead of a turn failure.
+    """
+    exec_tool = getattr(toolset, "exec_command", None)
+    if exec_tool is None:
+        return
+    try:
+        exec_tool.description = _EXEC_COMMAND_CONTRACT
+        schema = getattr(exec_tool, "params_json_schema", None)
+        if isinstance(schema, dict):
+            props = schema.get("properties")
+            if isinstance(props, dict) and isinstance(props.get("shell"), dict):
+                props["shell"]["description"] = _SHELL_PROP_CONTRACT
+    except Exception:
+        logger.warning("Failed to patch exec_command tool contract", exc_info=True)
+
+    original = getattr(exec_tool, "on_invoke_tool", None)
+    if not callable(original) or getattr(original, "_rakshak_shell_coerced", False):
+        return
+
+    async def _invoke_coerced(ctx: Any, raw: str) -> Any:
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return await original(ctx, raw)
+        if isinstance(data, dict) and isinstance(data.get("shell"), bool):
+            logger.warning("Dropping boolean `shell` flag from exec_command args (model mistake)")
+            data.pop("shell", None)
+            raw = json.dumps(data)
+        return await original(ctx, raw)
+
+    _invoke_coerced._rakshak_shell_coerced = True  # type: ignore[attr-defined]
+    try:
+        exec_tool.on_invoke_tool = _invoke_coerced
+    except Exception:
+        logger.warning("Failed to wrap exec_command invoker", exc_info=True)
+
+
 def build_rakshak_agent(
     *,
     name: str = "Root Agent",
@@ -138,7 +205,7 @@ def build_rakshak_agent(
         instructions="",
         tools=tools,
         tool_use_behavior=_finish_tool_use_behavior,
-        capabilities=[Shell()],
+        capabilities=[Shell(configure_tools=_configure_shell_tools)],
     )
 
 

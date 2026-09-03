@@ -1,0 +1,21 @@
+[
+  {
+    "title": "Missing Security Headers on rudrakshai.in",
+    "description": "Passive reconnaissance identified that the web server at https://rudrakshai.in does not deliver several important security headers in its HTTP responses. The missing headers include: Strict-Transport-Security (HSTS), X-Frame-Options, X-Content-Type-Options, Content-Security-Policy, and X-XSS-Protection. These headers are recommended to mitigate clickjacking, MIME-type sniffing, and protocol downgrade attacks. The server returns a 200 OK response with only basic headers (Date, Content-Length, Connection, Content-Type). Absence of these headers reduces the overall security posture and may expose the application to preventable web-based attacks.",
+    "category": "Missing Security Headers",
+    "cwe_id": "CWE-16",
+    "cvss_score": 0.0,
+    "severity": "none",
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "endpoint": "https://rudrakshai.in/",
+    "reproduction_steps": [
+      "Execute: curl -sI https://rudrakshai.in/",
+      "Observe response headers missing Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options, Content-Security-Policy, X-XSS-Protection"
+    ],
+    "poc": "curl -sI https://rudrakshai.in/",
+    "code_locations": [],
+    "remediation_patch": "",
+    "finding_hash": "d951a2c9d606ec3d",
+    "discovered_at": "2026-09-03T16:01:25.065130+00:00"
+  }
+]

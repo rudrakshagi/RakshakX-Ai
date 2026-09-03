@@ -1,0 +1,8 @@
+{
+  "scan_id": "rudra-passive",
+  "target": "https://rudrakshai.in",
+  "scope": "https://rudrakshai.in",
+  "mode": "quick",
+  "prompt_verbatim": "PASSIVE RECONNAISSANCE ONLY on https://rudrakshai.in.\nThis site is owned by the user requesting the scan (Rudraksh AGI / Aditya Kumar Mishra).\n\nAllowed (read-only, non-intrusive):\n- DNS enumeration (dig, nslookup, host)\n- TLS certificate inspection (openssl s_client, curl -vI)\n- HTTP security headers review (curl -sI / -s)\n- Technology fingerprinting from response headers and HTML meta tags\n\nSTRICTLY FORBIDDEN:\n- brute-force, fuzzing, exploitation, PoC execution\n- sqlmap, nuclei intrusive scans, login attempts\n- any state-changing request (POST/PUT/DELETE)\n- scanning any host other than rudrakshai.in\n\nFile vulnerability reports ONLY for confirmed passive observations\n(e.g. missing security headers). End by calling finish_scan with a full report.",
+  "benchmark_target": ""
+}

@@ -1,0 +1,350 @@
+Scope guard: target https://rudrakshai.in not in lab allowlist. Use isolated lab target per Protocol §2.
+Could not bootstrap Caido client; proceeding with direct scanning.
+[non-fatal] Tracing client error 401. Response data is redacted.
+Turn failed on agent 7b339f4f: Error running tool exec_command: 1 validation error for ExecCommandArgs
+shell
+  Input should be a valid string [type=string_type, input_value=True, input_type=bool]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type
+Traceback (most recent call last):
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1831, in _run_single_tool
+    result = await self._execute_single_tool_body(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2042, in _execute_single_tool_body
+    return await self._await_invoke_task(outer_task=outer_task, invoke_task=invoke_task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2175, in _await_invoke_task
+    return await asyncio.shield(invoke_task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2062, in _invoke_tool_and_run_post_invoke
+    invocation_result = await _invoke_function_tool_with_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/tool.py", line 2129, in _invoke_function_tool_with_metadata
+    output = await function_tool.on_invoke_tool(cast(Any, invoke_context), arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/sandbox/capabilities/tools/shell_tool.py", line 182, in _invoke
+    return await self.run(self.args_model.model_validate_json(raw_input))
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/pydantic/main.py", line 766, in model_validate_json
+    return cls.__pydantic_validator__.validate_json(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        json_data, strict=strict, extra=extra, context=context, by_alias=by_alias, by_name=by_name
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecCommandArgs
+shell
+  Input should be a valid string [type=string_type, input_value=True, input_type=bool]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/suryansh/RakshakX-Ai/rakshak/core/execution.py", line 100, in run_agent_loop
+    result = await Runner.run(
+             ^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run.py", line 290, in run
+    return await runner.run(
+           ^^^^^^^^^^^^^^^^^
+    ...<11 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run.py", line 1481, in run
+    turn_result = await model_task
+                  ^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/run_loop.py", line 2113, in run_single_turn
+    return await get_single_step_result_from_response(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<15 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/turn_resolution.py", line 3466, in get_single_step_result_from_response
+    return await execute_tools_and_side_effects(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/turn_resolution.py", line 858, in execute_tools_and_side_effects
+    ) = await _execute_tool_plan(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_planning.py", line 984, in _execute_tool_plan
+    ) = await gather_with_cancel(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<51 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/util/_asyncio_tasks.py", line 104, in gather_with_cancel
+    return tuple(gather_future.result())
+                 ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2322, in execute_function_tool_calls
+    return await _FunctionToolBatchExecutor(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<8 lines>...
+    ).execute()
+    ^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1627, in execute
+    await self._drain_pending_tasks(pending_tool_runs)
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1682, in _drain_pending_tasks
+    await self._raise_failure_after_draining_siblings(failure)
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1714, in _raise_failure_after_draining_siblings
+    raise merged_failure.error
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 344, in _record_completed_function_tool_tasks
+    results_by_tool_run[id(tool_run)] = task.result()
+                                        ~~~~~~~~~~~^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1852, in _run_single_tool
+    raise UserError(f"Error running tool {func_tool.name}: {e}") from e
+agents.exceptions.UserError: Error running tool exec_command: 1 validation error for ExecCommandArgs
+shell
+  Input should be a valid string [type=string_type, input_value=True, input_type=bool]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+Turn failed on agent 7b339f4f: Error running tool exec_command: 1 validation error for ExecCommandArgs
+shell
+  Input should be a valid string [type=string_type, input_value=True, input_type=bool]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type
+Traceback (most recent call last):
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1831, in _run_single_tool
+    result = await self._execute_single_tool_body(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2042, in _execute_single_tool_body
+    return await self._await_invoke_task(outer_task=outer_task, invoke_task=invoke_task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2175, in _await_invoke_task
+    return await asyncio.shield(invoke_task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2062, in _invoke_tool_and_run_post_invoke
+    invocation_result = await _invoke_function_tool_with_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/tool.py", line 2129, in _invoke_function_tool_with_metadata
+    output = await function_tool.on_invoke_tool(cast(Any, invoke_context), arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/sandbox/capabilities/tools/shell_tool.py", line 182, in _invoke
+    return await self.run(self.args_model.model_validate_json(raw_input))
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/pydantic/main.py", line 766, in model_validate_json
+    return cls.__pydantic_validator__.validate_json(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        json_data, strict=strict, extra=extra, context=context, by_alias=by_alias, by_name=by_name
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecCommandArgs
+shell
+  Input should be a valid string [type=string_type, input_value=True, input_type=bool]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/suryansh/RakshakX-Ai/rakshak/core/execution.py", line 100, in run_agent_loop
+    result = await Runner.run(
+             ^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run.py", line 290, in run
+    return await runner.run(
+           ^^^^^^^^^^^^^^^^^
+    ...<11 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run.py", line 1481, in run
+    turn_result = await model_task
+                  ^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/run_loop.py", line 2113, in run_single_turn
+    return await get_single_step_result_from_response(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<15 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/turn_resolution.py", line 3466, in get_single_step_result_from_response
+    return await execute_tools_and_side_effects(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/turn_resolution.py", line 858, in execute_tools_and_side_effects
+    ) = await _execute_tool_plan(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_planning.py", line 984, in _execute_tool_plan
+    ) = await gather_with_cancel(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<51 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/util/_asyncio_tasks.py", line 104, in gather_with_cancel
+    return tuple(gather_future.result())
+                 ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2322, in execute_function_tool_calls
+    return await _FunctionToolBatchExecutor(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<8 lines>...
+    ).execute()
+    ^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1627, in execute
+    await self._drain_pending_tasks(pending_tool_runs)
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1682, in _drain_pending_tasks
+    await self._raise_failure_after_draining_siblings(failure)
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1714, in _raise_failure_after_draining_siblings
+    raise merged_failure.error
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 344, in _record_completed_function_tool_tasks
+    results_by_tool_run[id(tool_run)] = task.result()
+                                        ~~~~~~~~~~~^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1852, in _run_single_tool
+    raise UserError(f"Error running tool {func_tool.name}: {e}") from e
+agents.exceptions.UserError: Error running tool exec_command: 1 validation error for ExecCommandArgs
+shell
+  Input should be a valid string [type=string_type, input_value=True, input_type=bool]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+Turn failed on agent 7b339f4f: Error running tool exec_command: 1 validation error for ExecCommandArgs
+shell
+  Input should be a valid string [type=string_type, input_value=True, input_type=bool]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type
+Traceback (most recent call last):
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1831, in _run_single_tool
+    result = await self._execute_single_tool_body(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2042, in _execute_single_tool_body
+    return await self._await_invoke_task(outer_task=outer_task, invoke_task=invoke_task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2175, in _await_invoke_task
+    return await asyncio.shield(invoke_task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2062, in _invoke_tool_and_run_post_invoke
+    invocation_result = await _invoke_function_tool_with_metadata(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/tool.py", line 2129, in _invoke_function_tool_with_metadata
+    output = await function_tool.on_invoke_tool(cast(Any, invoke_context), arguments)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/sandbox/capabilities/tools/shell_tool.py", line 182, in _invoke
+    return await self.run(self.args_model.model_validate_json(raw_input))
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/pydantic/main.py", line 766, in model_validate_json
+    return cls.__pydantic_validator__.validate_json(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        json_data, strict=strict, extra=extra, context=context, by_alias=by_alias, by_name=by_name
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+pydantic_core._pydantic_core.ValidationError: 1 validation error for ExecCommandArgs
+shell
+  Input should be a valid string [type=string_type, input_value=True, input_type=bool]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/suryansh/RakshakX-Ai/rakshak/core/execution.py", line 100, in run_agent_loop
+    result = await Runner.run(
+             ^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run.py", line 290, in run
+    return await runner.run(
+           ^^^^^^^^^^^^^^^^^
+    ...<11 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run.py", line 1481, in run
+    turn_result = await model_task
+                  ^^^^^^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/run_loop.py", line 2113, in run_single_turn
+    return await get_single_step_result_from_response(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<15 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/turn_resolution.py", line 3466, in get_single_step_result_from_response
+    return await execute_tools_and_side_effects(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/turn_resolution.py", line 858, in execute_tools_and_side_effects
+    ) = await _execute_tool_plan(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_planning.py", line 984, in _execute_tool_plan
+    ) = await gather_with_cancel(
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<51 lines>...
+    )
+    ^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/util/_asyncio_tasks.py", line 104, in gather_with_cancel
+    return tuple(gather_future.result())
+                 ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 2322, in execute_function_tool_calls
+    return await _FunctionToolBatchExecutor(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<8 lines>...
+    ).execute()
+    ^^^^^^^^^^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1627, in execute
+    await self._drain_pending_tasks(pending_tool_runs)
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1682, in _drain_pending_tasks
+    await self._raise_failure_after_draining_siblings(failure)
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1714, in _raise_failure_after_draining_siblings
+    raise merged_failure.error
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 344, in _record_completed_function_tool_tasks
+    results_by_tool_run[id(tool_run)] = task.result()
+                                        ~~~~~~~~~~~^^
+  File "/home/suryansh/RakshakX-Ai/.venv/lib/python3.14/site-packages/agents/run_internal/tool_execution.py", line 1852, in _run_single_tool
+    raise UserError(f"Error running tool {func_tool.name}: {e}") from e
+agents.exceptions.UserError: Error running tool exec_command: 1 validation error for ExecCommandArgs
+shell
+  Input should be a valid string [type=string_type, input_value=True, input_type=bool]
+    For further information visit https://errors.pydantic.dev/2.12/v/string_type
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
+[non-fatal] Tracing client error 401. Response data is redacted.
