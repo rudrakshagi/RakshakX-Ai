@@ -3,12 +3,21 @@ import { INITIAL_AGENTS } from '../../data/mockScanData';
 import { Network, Cpu, Mail, Send, CheckCircle2, Clock, Sparkles } from 'lucide-react';
 import { AgentNode } from '../../types';
 
-export const AgentTopologyView: React.FC = () => {
-  const [agents, setAgents] = useState<AgentNode[]>(INITIAL_AGENTS);
+export const AgentTopologyView: React.FC<{ liveAgents?: AgentNode[] }> = ({ liveAgents }) => {
+  const [agents, setAgents] = useState<AgentNode[]>(liveAgents && liveAgents.length > 0 ? liveAgents : INITIAL_AGENTS);
   const [steerMsg, setSteerMsg] = useState('');
   const [sentFeedback, setSentFeedback] = useState(false);
 
+  // If parent provides liveAgents, sync from it and skip extra polling (App.tsx already polls /api/agents every 1s)
   useEffect(() => {
+    if (liveAgents && liveAgents.length > 0) {
+      setAgents(liveAgents);
+      return;
+    }
+  }, [liveAgents]);
+
+  useEffect(() => {
+    if (liveAgents && liveAgents.length > 0) return; // parent handles polling
     let cancelled = false;
     async function loadAgents() {
       try {
@@ -34,9 +43,9 @@ export const AgentTopologyView: React.FC = () => {
       }
     }
     loadAgents();
-    const interval = setInterval(loadAgents, 2000);
+    const interval = setInterval(loadAgents, 5000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, []);
+  }, [liveAgents]);
 
   const handleSendSteer = (e: React.FormEvent) => {
     e.preventDefault();

@@ -19,6 +19,13 @@ ROOT_DIR = Path(__file__).resolve().parent
 WEB_DIR = ROOT_DIR / "web"
 
 
+def start_bridge():
+    """Start the OpenCode bridge on port 8787 (proxied via Vite /v1)."""
+    npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
+    bridge_dir = ROOT_DIR / "opencode-bridge"
+    subprocess.run([npm_cmd, "start"], cwd=str(bridge_dir))
+
+
 def start_backend():
     """Start the Python Backend API server on port 8080."""
     os.environ["PYTHONPATH"] = str(ROOT_DIR)
@@ -38,6 +45,7 @@ def main():
   🛡️  RakshakX — Autonomous AI Cybersecurity Platform
 ===============================================================
   [✓] Backend REST API  : http://127.0.0.1:8080
+  [✓] OpenCode Bridge   : http://127.0.0.1:8787 (proxied via /v1)
   [✓] Web Console UI    : http://localhost:3000
   [✓] MCP Bridge Protocol: Stdio / JSON-RPC 2.0
   [✓] Isolated Sandbox   : Docker Kali Linux sidecar
@@ -45,6 +53,11 @@ def main():
   👉 OPEN YOUR BROWSER AT: http://localhost:3000
 ===============================================================
 """)
+    # Start Bridge in background thread
+    t_bridge = threading.Thread(target=start_bridge, daemon=True)
+    t_bridge.start()
+    time.sleep(1)
+
     # Start Backend in background thread
     t_backend = threading.Thread(target=start_backend, daemon=True)
     t_backend.start()

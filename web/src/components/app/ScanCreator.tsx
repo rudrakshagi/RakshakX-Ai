@@ -1,15 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Play, Globe, Code2, ShieldAlert, CheckSquare, Square, Terminal, CheckCircle2, ArrowRight, Sparkles } from 'lucide-react';
 
 interface ScanCreatorProps {
   onScanLaunched: (target: string, mode: string) => void;
+  initialPrompt?: string;
 }
 
-export const ScanCreator: React.FC<ScanCreatorProps> = ({ onScanLaunched }) => {
+export const ScanCreator: React.FC<ScanCreatorProps> = ({ onScanLaunched, initialPrompt }) => {
   const [targetType, setTargetType] = useState<'domain' | 'url' | 'repo'>('domain');
   const [targetValue, setTargetValue] = useState('example.com');
   const [scanMode, setScanMode] = useState<'blackbox' | 'whitebox'>('blackbox');
-  const [customPrompt, setCustomPrompt] = useState('');
+  const [customPrompt, setCustomPrompt] = useState(initialPrompt || '');
+
+  useEffect(() => {
+    if (initialPrompt) setCustomPrompt(initialPrompt);
+  }, [initialPrompt]);
   const [authorized, setAuthorized] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [scanStep, setScanStep] = useState('');
@@ -33,6 +38,7 @@ export const ScanCreator: React.FC<ScanCreatorProps> = ({ onScanLaunched }) => {
     setIsScanning(true);
     setScanStep('Initializing isolated Kali Linux Docker container...');
 
+    const enabledModules = Object.entries(modules).filter(([, v]) => v).map(([k]) => k);
     fetch('/api/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -40,6 +46,9 @@ export const ScanCreator: React.FC<ScanCreatorProps> = ({ onScanLaunched }) => {
         target: targetValue,
         mode: scanMode === 'blackbox' ? 'Black Box' : 'White Box',
         prompt: customPrompt,
+        targetType,
+        modules: enabledModules,
+        scope: targetValue,
       }),
     }).catch(() => {});
 

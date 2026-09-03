@@ -1,11 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PLAYBOOKS_CATALOG } from '../../data/playbooksData';
 import { BookOpen, Key, Database, ShieldAlert, Cpu, Sparkles, Check, FileText } from 'lucide-react';
 import { PlaybookItem } from '../../types';
 
 export const PlaybooksSection: React.FC = () => {
+  const [catalog, setCatalog] = useState<PlaybookItem[]>(PLAYBOOKS_CATALOG);
   const [selectedPlaybook, setSelectedPlaybook] = useState<PlaybookItem>(PLAYBOOKS_CATALOG[0]);
   const [loadedSkills, setLoadedSkills] = useState<Record<string, boolean>>({});
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPlaybooks() {
+      try {
+        const res = await fetch('/api/playbooks');
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = data.playbooks || data.data || [];
+        if (Array.isArray(list) && list.length > 0 && !cancelled) {
+          const mapped: PlaybookItem[] = list.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            filename: p.filename,
+            category: p.category,
+            description: p.description,
+            attackVectors: p.attackVectors || [],
+            status: p.status || 'Active',
+          }));
+          setCatalog(mapped);
+          setSelectedPlaybook(prev => mapped.find(m => m.id === prev.id) || mapped[0]);
+          setLive(true);
+        }
+      } catch {}
+    }
+    loadPlaybooks();
+  }, []);
 
   const handleToggleLoad = (id: string) => {
     setLoadedSkills(prev => ({ ...prev, [id]: !prev[id] }));
@@ -28,9 +57,17 @@ export const PlaybooksSection: React.FC = () => {
           </p>
         </div>
 
+        {/* Live indicator */}
+        <div className="flex justify-center mb-6">
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${live ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 border-emerald-200 dark:border-emerald-800' : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 border-amber-200 dark:border-amber-800'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+            {live ? `Live: ${catalog.length} playbooks from backend` : 'Offline: showing static catalog'}
+          </span>
+        </div>
+
         {/* Playbook Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {PLAYBOOKS_CATALOG.map((p) => {
+          {catalog.map((p) => {
             const isLoaded = loadedSkills[p.id];
             return (
               <div

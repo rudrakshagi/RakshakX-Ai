@@ -17,7 +17,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import psutil
 
@@ -198,7 +198,7 @@ def _apply_config_env(cfg: dict[str, Any]) -> None:
         os.environ["RAKSHAK_LLM__API_BASE"] = cfg["api_base"]
 
 
-def _run_scan_background(run_dir: Path, *, target: str, mode: str, prompt: str) -> None:
+def _run_scan_background(run_dir: Path, *, target: str, mode: str, prompt: str, benchmark_target: str = "", scope: str = "") -> None:
     """Execute the real autonomous scan in a background thread, updating live status."""
     scan_id = run_dir.name
     _write_run_meta(run_dir, status="Running", started_at=datetime.now(UTC).isoformat())
@@ -207,19 +207,28 @@ def _run_scan_background(run_dir: Path, *, target: str, mode: str, prompt: str) 
         from rakshak.core.runner import run_rakshak_scan
 
         is_whitebox = "white" in mode.lower()
+        # Resolve benchmark mode: if mode is T01/A.1 etc use verbatim prompt
+        effective_mode = mode.strip()
+        # Normalize common aliases
+        _mode_lower = effective_mode.lower()
+        if "benchmark" in _mode_lower or _mode_lower in ("t01", "a.1", "a1", "juice", "juice_shop"):
+            effective_mode = "T01"
         asyncio.run(run_rakshak_scan(
             target=target,
             scan_id=scan_id,
-            scan_mode="quick",
+            scan_mode=effective_mode,
             is_whitebox=is_whitebox,
             max_budget_usd=3.0,
             max_turns=30,
+            prompt_verbatim=prompt or None,
+            scope=scope or target,
+            benchmark_target=benchmark_target or None,
         ))
         duration = f"{int(time.time() - started) // 60}m {int(time.time() - started) % 60}s"
-        _write_run_meta(run_dir, status="Completed", duration=duration)
+        _write_run_meta(run_dir, status="Completed", duration=duration, ended_at=datetime.now(UTC).isoformat())
     except Exception as exc:
         logger.error("Background scan %s failed: %s\n%s", scan_id, exc, traceback.format_exc())
-        _write_run_meta(run_dir, status="Failed", error=str(exc))
+        _write_run_meta(run_dir, status="Failed", error=str(exc), ended_at=datetime.now(UTC).isoformat())
 
 
 def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
@@ -262,17 +271,19 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 target = body_data.get("target", "example.com")
                 mode = body_data.get("mode", "Black Box")
                 prompt = body_data.get("prompt", "")
+                benchmark_target = body_data.get("benchmark_target", body_data.get("benchmarkTarget", ""))
+                scope = body_data.get("scope", target)
                 scan_id = f"scan-{uuid.uuid4().hex[:8]}"
                 new_run_dir = run_dir_for(scan_id)
                 with contextlib.suppress(Exception):
                     new_run_dir.mkdir(parents=True, exist_ok=True)
                 _write_run_meta(new_run_dir, scan_id=scan_id, target=target, mode=mode,
-                                prompt=prompt, status="Queued")
+                                prompt=prompt, scope=scope, benchmark_target=benchmark_target, status="Queued")
                 _set_active_scan(new_run_dir)
                 threading.Thread(
                     target=_run_scan_background,
                     args=(new_run_dir,),
-                    kwargs={"target": target, "mode": mode, "prompt": prompt},
+                    kwargs={"target": target, "mode": mode, "prompt": prompt, "benchmark_target": benchmark_target, "scope": scope},
                     daemon=True,
                 ).start()
                 _send_json({
@@ -281,12 +292,67 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                     "target": target,
                     "mode": mode,
                     "prompt": prompt,
+                    "scope": scope,
+                    "benchmark_target": benchmark_target,
                     "message": f"Autonomous security assessment started for {target}",
                 })
                 return
 
+            if path == "/api/benchmark/prompts":
+                try:
+                    from rakshak.benchmark.prompts import PROMPT_REGISTRY
+                    _send_json({"prompts": PROMPT_REGISTRY})
+                except Exception as e:
+                    _send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+
+            if path == "/api/benchmark/targets":
+                try:
+                    import glob as _glob
+                    targets = []
+                    for p in _glob.glob("rakshak/benchmark/targets/*.json"):
+                        import json as _json
+                        data = _json.loads(Path(p).read_text(encoding="utf-8"))
+                        targets.append({"file": p, "target": data.get("target"), "version": data.get("version"), "count": len(data.get("ground_truth", []))})
+                    _send_json({"targets": targets})
+                except Exception as e:
+                    _send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+
             if path == "/api/steer":
                 instruction = body_data.get("instruction", "")
+                # Persist to mailbox file so runner can poll it (Phase 3 steer queue)
+                try:
+                    active_run_dir = _resolve_run_dir(run_dir)
+                    state_dir = runtime_state_dir(active_run_dir)
+                    state_dir.mkdir(parents=True, exist_ok=True)
+                    steer_file = state_dir / "steer_queue.json"
+                    existing = []
+                    if steer_file.exists():
+                        with contextlib.suppress(Exception):
+                            existing = json.loads(steer_file.read_text(encoding="utf-8"))
+                            if not isinstance(existing, list):
+                                existing = []
+                    existing.append({"instruction": instruction, "timestamp": time.time(), "iso": datetime.now(UTC).isoformat()})
+                    # keep last 50
+                    existing = existing[-50:]
+                    steer_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+                    # Also append to active agents mailbox pending_counts hint
+                    agents_file = state_dir / "agents.json"
+                    if agents_file.exists():
+                        with contextlib.suppress(Exception):
+                            agents_data = json.loads(agents_file.read_text(encoding="utf-8"))
+                            # Ensure metadata for root agent has pending_counts
+                            meta = agents_data.get("metadata", {})
+                            root_key = "root_01" if "root_01" in agents_data.get("names", {}) else next(iter(agents_data.get("names", {})), None)
+                            if root_key:
+                                if root_key not in meta:
+                                    meta[root_key] = {}
+                                meta[root_key]["pending_counts"] = len(existing)
+                                agents_data["metadata"] = meta
+                                agents_file.write_text(json.dumps(agents_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                except Exception as exc:
+                    logger.warning("Failed to persist steer queue: %s", exc)
                 _send_json({"success": True, "delivered": True, "message": f"Steering instruction queued: {instruction}"})
                 return
 
@@ -295,6 +361,24 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             path = parsed.path
+            query = parse_qs(parsed.query)
+
+            def _get_requested_run_dir() -> Path:
+                # Support ?run=scan-xxxx or ?scan_id=xxx or ?id=xxx for historic selection
+                run_id = (query.get("run") or query.get("scan_id") or query.get("id") or [None])[0]
+                if run_id:
+                    cand = run_dir_for(run_id)
+                    if cand.exists():
+                        return cand
+                return _resolve_run_dir(run_dir)
+
+            def _get_artifact_dir(filename: str) -> Path:
+                run_id = (query.get("run") or query.get("scan_id") or query.get("id") or [None])[0]
+                if run_id:
+                    cand = run_dir_for(run_id)
+                    if cand.exists():
+                        return cand
+                return _resolve_artifact_dir(run_dir, filename)
 
             def _send_json(payload: Any, status: int = HTTPStatus.OK) -> None:
                 self.send_response(status)
@@ -321,7 +405,7 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/overview":
-                active_run_dir = _resolve_run_dir(run_dir)
+                active_run_dir = _get_requested_run_dir()
                 vuln_file = active_run_dir / "vulnerabilities.json"
                 vulns = []
                 if vuln_file.exists():
@@ -389,7 +473,7 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/vulnerabilities":
-                active_run_dir = _resolve_run_dir(run_dir)
+                active_run_dir = _get_requested_run_dir()
                 vuln_file = active_run_dir / "vulnerabilities.json"
                 data = []
                 if vuln_file.exists():
@@ -399,7 +483,7 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/agents":
-                active_run_dir = _resolve_run_dir(run_dir)
+                active_run_dir = _get_requested_run_dir()
                 state_dir = runtime_state_dir(active_run_dir)
                 agents_file = state_dir / "agents.json"
                 agents_state: dict[str, Any] = {"names": {}, "statuses": {}, "metadata": {}}
@@ -410,7 +494,7 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/report":
-                active_run_dir = _resolve_artifact_dir(run_dir, "report.md")
+                active_run_dir = _get_artifact_dir("report.md")
                 report_file = active_run_dir / "report.md"
                 content = report_file.read_text(encoding="utf-8") if report_file.exists() else "# RakshakX Assessment Report\n\nNo active scan report yet."
                 self.send_response(HTTPStatus.OK)
@@ -421,7 +505,7 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/sarif":
-                active_run_dir = _resolve_artifact_dir(run_dir, "sarif.json")
+                active_run_dir = _get_artifact_dir("sarif.json")
                 sarif_file = active_run_dir / "sarif.json"
                 if sarif_file.exists():
                     self.send_response(HTTPStatus.OK)
@@ -435,7 +519,7 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if path == "/api/pdf":
-                active_run_dir = _resolve_artifact_dir(run_dir, "report.pdf")
+                active_run_dir = _get_artifact_dir("report.pdf")
                 pdf_file = active_run_dir / "report.pdf"
                 if pdf_file.exists():
                     self.send_response(HTTPStatus.OK)
@@ -448,7 +532,127 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 self.send_error(HTTPStatus.NOT_FOUND, "PDF report not generated yet.")
                 return
 
+            if path == "/api/benchmark/scorecard":
+                active_run_dir = _get_artifact_dir("scorecard.json")
+                sc_file = active_run_dir / "scorecard.json"
+                if sc_file.exists():
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(sc_file.read_bytes())
+                    return
+                # also check legacy location reports/benchmark_v2/
+                legacy = Path("reports/benchmark_v2/scorecard.json")
+                if legacy.exists():
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(legacy.read_bytes())
+                    return
+                _send_json({"error": "Scorecard not ready yet. Run a benchmark scan."}, status=HTTPStatus.NOT_FOUND)
+                return
+
+            if path == "/api/benchmark/freeze":
+                active_run_dir = _get_artifact_dir("environment_freeze.json")
+                freeze_file = active_run_dir / "environment_freeze.json"
+                if freeze_file.exists():
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(freeze_file.read_bytes())
+                    return
+                legacy = Path("reports/benchmark_v2/environment_freeze.json")
+                if legacy.exists():
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(legacy.read_bytes())
+                    return
+                _send_json({"error": "Environment freeze not available."}, status=HTTPStatus.NOT_FOUND)
+                return
+
+            if path == "/api/benchmark/repeatability":
+                # Serve summary from latest repeatability run if exists
+                for cand in [Path("reports/benchmark_v2/repeatability_summary.json"), Path("reports/benchmark_v2/summary.json")]:
+                    if cand.exists():
+                        self.send_response(HTTPStatus.OK)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Access-Control-Allow-Origin", "*")
+                        self.end_headers()
+                        self.wfile.write(cand.read_bytes())
+                        return
+                _send_json({"error": "Repeatability summary not available. Run scripts/run_benchmark_repeatability.py"}, status=HTTPStatus.NOT_FOUND)
+                return
+
+            if path == "/api/steer":
+                try:
+                    active_run_dir = _get_requested_run_dir()
+                    state_dir = runtime_state_dir(active_run_dir)
+                    steer_file = state_dir / "steer_queue.json"
+                    data = []
+                    if steer_file.exists():
+                        with contextlib.suppress(Exception):
+                            data = json.loads(steer_file.read_text(encoding="utf-8"))
+                    _send_json({"queue": data, "count": len(data) if isinstance(data, list) else 0})
+                except Exception as e:
+                    _send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+
+            if path == "/api/playbooks":
+                try:
+                    skills_dir = Path("rakshak/skills")
+                    catalog = []
+                    # Map known playbook metadata (matches web/src/data/playbooksData.ts)
+                    meta_map = {
+                        "authentication_jwt": {"id": "playbook-jwt", "name": "Authentication & JWT Security", "category": "Broken Authentication", "attackVectors": ["Algorithm Confusion", "None Algorithm", "Weak Secret Cracking", "Key ID Traversal"]},
+                        "sql_injection": {"id": "playbook-sqli", "name": "SQL Injection & Database Exploitation", "category": "Injection", "attackVectors": ["Time-Based Blind", "Boolean Blind", "Error-Based", "SQLMap Proxy Bridging"]},
+                        "idor": {"id": "playbook-idor", "name": "Insecure Direct Object References (IDOR/BOLA)", "category": "Broken Access Control", "attackVectors": ["Multi-User Probing", "Parameter Tampering", "Method Mutation", "UUID Probing"]},
+                        "ssrf": {"id": "playbook-ssrf", "name": "Server-Side Request Forgery (SSRF)", "category": "Server-Side Request Forgery", "attackVectors": ["AWS IMDSv1/v2", "GCP Metadata", "DNS Rebinding", "Loopback Bypasses"]},
+                        "race_conditions": {"id": "playbook-race", "name": "Race Conditions & Concurrency Flaws", "category": "Broken Business Logic", "attackVectors": ["HTTP/2 Single-Packet Attack", "Burst Async Fuzzing", "Coupon Reuse", "Balance Race"]},
+                        "xss": {"id": "playbook-xss", "name": "Cross-Site Scripting & DOM Exploitation", "category": "Client-Side Attacks", "attackVectors": ["DOM XSS", "Stored XSS", "CSP Bypasses", "Chromium Flag Evaluation"]},
+                        "rce": {"id": "playbook-rce", "name": "Remote Code Execution & Command Injection", "category": "Server-Side Execution", "attackVectors": ["Command Separators", "Blind Sleep Injections", "Polyglot Web Shells", "Deserialization"]},
+                        "agent_browser": {"id": "playbook-browser", "name": "Headless Browser & DOM Automation", "category": "Tooling", "attackVectors": ["Chromium Automation", "DOM Inspection", "Session Replay"]},
+                    }
+                    if skills_dir.exists():
+                        for p in sorted(skills_dir.glob("**/*.md")):
+                            stem = p.stem
+                            meta = meta_map.get(stem, {"id": f"playbook-{stem}", "name": stem.replace("_", " ").title(), "category": p.parent.name, "attackVectors": []})
+                            try:
+                                text = p.read_text(encoding="utf-8")
+                                # first heading or second line as description
+                                desc = ""
+                                for line in text.splitlines():
+                                    l = line.strip()
+                                    if l and not l.startswith("#") and len(l) > 20:
+                                        desc = l[:180]
+                                        break
+                                if not desc:
+                                    desc = text[:180]
+                            except Exception:
+                                desc = ""
+                            catalog.append({
+                                "id": meta["id"],
+                                "name": meta["name"],
+                                "filename": p.name,
+                                "category": meta["category"],
+                                "description": desc,
+                                "attackVectors": meta["attackVectors"],
+                                "skill": stem,
+                                "status": "Active",
+                            })
+                    _send_json({"playbooks": catalog})
+                except Exception as e:
+                    _send_json({"error": str(e)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+
             # Default fallback for API
+            if path.startswith("/api/"):
+                _send_json({"error": f"Endpoint {path} not found"}, status=HTTPStatus.NOT_FOUND)
+                return
             _send_json(_get_system_telemetry())
 
         def log_message(self, format: str, *args: Any) -> None:

@@ -34,7 +34,7 @@ export const AiChatView: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const API_BASE_URL = 'http://localhost:8787';
+  const API_BASE_URL = '';
 
   // Compute filtered models
   const filteredModels = models.filter(m => {
@@ -85,7 +85,7 @@ export const AiChatView: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Error fetching models:', err);
-      setError('Could not connect to the bridge server. Ensure the bridge is running at http://localhost:8787.');
+      setError('Could not connect to the bridge server. Ensure the bridge is running (proxied via /v1).');
     } finally {
       setIsFetchingModels(false);
     }

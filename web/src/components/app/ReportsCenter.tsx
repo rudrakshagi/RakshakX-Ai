@@ -8,6 +8,8 @@ interface ReportsCenterProps {
 
 export const ReportsCenter: React.FC<ReportsCenterProps> = ({ findings }) => {
   const [activeExport, setActiveExport] = useState<string | null>(null);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [selectedRun, setSelectedRun] = useState<string>('');
   const [markdownPreview, setMarkdownPreview] = useState<string>(
 `# RakshakX Security Assessment Report: session_8821
 
@@ -24,22 +26,36 @@ RakshakX conducted an autonomous multi-agent penetration test against https://ex
 All network requests were captured and analyzed through a local Caido HTTP/HTTPS proxy daemon on port 48080. Child agents were coordinated using asynchronous mailboxes.`);
 
   useEffect(() => {
-    fetch('/api/report')
+    fetch('/api/runs')
+      .then(r => r.ok ? r.json() : [])
+      .then(list => {
+        if (Array.isArray(list) && list.length > 0) {
+          setRuns(list);
+          if (!selectedRun) setSelectedRun(list[0].id);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const url = selectedRun ? `/api/report?run=${encodeURIComponent(selectedRun)}` : '/api/report';
+    fetch(url)
       .then(res => (res.ok ? res.text() : null))
       .then(text => { if (text) setMarkdownPreview(text); })
       .catch(() => {});
-  }, []);
+  }, [selectedRun]);
 
   const handleExport = (type: string) => {
     setActiveExport(type);
     setTimeout(() => setActiveExport(null), 2500);
+    const q = selectedRun ? `?run=${encodeURIComponent(selectedRun)}` : '';
 
     if (type === 'sarif') {
-      window.open('/api/sarif', '_blank');
+      window.open(`/api/sarif${q}`, '_blank');
     } else if (type === 'pdf') {
-      window.open('/api/pdf', '_blank');
+      window.open(`/api/pdf${q}`, '_blank');
     } else if (type === 'md') {
-      fetch('/api/report')
+      fetch(`/api/report${q}`)
         .then(res => (res.ok ? res.text() : null))
         .then(text => {
           if (!text) return;
@@ -47,7 +63,7 @@ All network requests were captured and analyzed through a local Caido HTTP/HTTPS
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = 'report.md';
+          a.download = `report-${selectedRun || 'latest'}.md`;
           a.click();
           URL.revokeObjectURL(url);
         })
@@ -67,6 +83,14 @@ All network requests were captured and analyzed through a local Caido HTTP/HTTPS
             Export confirmed findings in machine-readable and executive formats.
           </p>
         </div>
+        {runs.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500">Run:</span>
+            <select value={selectedRun} onChange={e => setSelectedRun(e.target.value)} className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-[#121B2D] border border-slate-200 dark:border-slate-700 text-xs font-mono">
+              {runs.map(r => <option key={r.id} value={r.id}>{r.id} — {r.target} ({r.findings_count})</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* 3 Large Action Cards */}

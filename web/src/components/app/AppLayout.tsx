@@ -16,7 +16,7 @@ import { ThemeToggle } from '../common/ThemeToggle';
 import { Logo } from '../common/Logo';
 import { SocialFooterStrip } from '../common/SocialFooterStrip';
 
-export type AppTab = 'overview' | 'new-scan' | 'findings' | 'agents' | 'playbooks' | 'reports' | 'settings' | 'ai-chat';
+export type AppTab = 'overview' | 'new-scan' | 'findings' | 'agents' | 'playbooks' | 'reports' | 'benchmarks' | 'settings' | 'ai-chat';
 
 interface AppLayoutProps {
   currentTab: AppTab;
@@ -45,6 +45,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     { id: 'ai-chat', label: 'AI Security Chat', icon: Bot },
     { id: 'playbooks', label: 'Playbooks & Skills', icon: BookOpen },
     { id: 'reports', label: 'Compliance Reports', icon: FileCheck },
+    { id: 'benchmarks', label: 'Research / Benchmarks', icon: FileCheck },
     { id: 'settings', label: 'LLM & API Settings', icon: Settings },
   ];
 

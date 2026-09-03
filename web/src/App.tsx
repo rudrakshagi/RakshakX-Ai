@@ -31,6 +31,7 @@ import { ScanCreator } from './components/app/ScanCreator';
 import { FindingsLedger } from './components/app/FindingsLedger';
 import { AgentTopologyView } from './components/app/AgentTopologyView';
 import { ReportsCenter } from './components/app/ReportsCenter';
+import { BenchmarksView } from './components/app/BenchmarksView';
 import { SettingsView } from './components/app/SettingsView';
 import { AiChatView } from './components/app/AiChatView';
 
@@ -139,6 +140,8 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
+  const [pendingPrompt, setPendingPrompt] = useState<string>('');
+
   const handleStartScan = () => {
     setCurrentView('app');
     setAppTab('new-scan');
@@ -146,11 +149,14 @@ export function App() {
   };
 
   const handleExecutePrompt = (promptText: string) => {
+    setPendingPrompt(promptText);
     setCurrentView('app');
     setAppTab('new-scan');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleScanLaunched = (target: string, mode: string) => {
+    setPendingPrompt('');
     setAppTab('overview');
   };
 
@@ -213,13 +219,50 @@ export function App() {
             {/* 13. Reporting & Compliance */}
             <ReportingSection />
 
-            {/* 14. Use Cases */}
+            {/* 14. Benchmark & Validation Protocol v2.0 */}
+            <div id="benchmark">
+              {/* Lazy import to avoid heavy dep; use dynamic import via existing component */}
+            </div>
+            {/* Render BenchmarkSection inline without extra import churn */}
+            <section className="py-16 bg-white dark:bg-[#0B0F1A] border-y border-slate-200 dark:border-slate-800">
+              <div className="max-w-7xl mx-auto px-6">
+                <div className="inline-flex items-center gap-2 text-xs font-mono tracking-widest text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> RESEARCH / BENCHMARKS
+                </div>
+                <h2 className="text-3xl font-bold mt-3 text-slate-900 dark:text-white">Benchmark & Validation Protocol v2.0</h2>
+                <p className="mt-3 text-sm text-slate-600 dark:text-slate-300 max-w-3xl">
+                  Reproducible, evidence-backed measurements of RakshakX Community Edition. Detailed results are published under Research / Benchmarks in the product console. The company site shows only a concise verified summary with a link to the full report. See <span className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">docs/BENCHMARK_V2_PROTOCOL.md</span>.
+                </p>
+                <div className="mt-8 grid md:grid-cols-4 gap-4">
+                  {[
+                    { k: 'Precision', v: 'TP/(TP+FP)' },
+                    { k: 'Recall', v: 'TP/(TP+FN)' },
+                    { k: 'F1', v: '2PR/(P+R)' },
+                    { k: 'Verification Rate', v: 'Confirmed/candidates' },
+                  ].map((c) => (
+                    <div key={c.k} className="rounded-2xl border border-slate-200 dark:border-slate-800 p-5 bg-slate-50 dark:bg-[#121B2D]">
+                      <div className="text-xs font-bold tracking-widest text-slate-500">{c.k}</div>
+                      <div className="font-mono text-sm mt-1">{c.v}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-8 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 p-5 text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+                  <span className="font-bold">Integrity Statement:</span> The benchmark measures RakshakX on selected controlled environments and does not establish universal vulnerability detection, zero-day detection, enterprise-scale performance, or security of arbitrary real-world systems.
+                </div>
+                <div className="mt-6 flex flex-wrap gap-3 text-xs">
+                  <button onClick={() => { setCurrentView('app'); setAppTab('benchmarks'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="px-4 py-2 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-semibold">View Benchmarks in Console →</button>
+                  <span className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">Primary: Juice Shop 17.2.1 · DVWA 2.0 · Metasploitable2</span>
+                </div>
+              </div>
+            </section>
+
+            {/* 15. Use Cases */}
             <UseCasesSection />
 
-            {/* 15. Open-Source Philosophy */}
+            {/* 16. Open-Source Philosophy */}
             <OpenSourceSection />
 
-            {/* 16. Final CTA */}
+            {/* 17. Final CTA */}
             <FinalCtaSection onStartScan={handleStartScan} />
           </main>
 
@@ -249,7 +292,7 @@ export function App() {
           )}
 
           {appTab === 'new-scan' && (
-            <ScanCreator onScanLaunched={handleScanLaunched} />
+            <ScanCreator onScanLaunched={handleScanLaunched} initialPrompt={pendingPrompt} />
           )}
 
           {appTab === 'findings' && (
@@ -260,7 +303,7 @@ export function App() {
           )}
 
           {appTab === 'agents' && (
-            <AgentTopologyView />
+            <AgentTopologyView liveAgents={agents} />
           )}
 
           {appTab === 'playbooks' && (
@@ -271,6 +314,10 @@ export function App() {
 
           {appTab === 'reports' && (
             <ReportsCenter findings={findings} />
+          )}
+
+          {appTab === 'benchmarks' && (
+            <BenchmarksView />
           )}
 
           {appTab === 'settings' && (
