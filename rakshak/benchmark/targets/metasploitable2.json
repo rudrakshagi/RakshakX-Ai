@@ -1,0 +1,100 @@
+{
+  "target": "metasploitable2",
+  "version": "2.0",
+  "image": "rapid7/metasploitable2 (OVA)",
+  "digest": "sha256:pending-ova-snapshot-record-on-import-ova-checksum",
+  "vm_snapshot_note": "Metasploitable2 is distributed as a VM OVA, not a Docker image. Import via VirtualBox/VMware and record snapshot checksum in environment_freeze.json target.snapshot. See https://docs.rapid7.com/metasploitable/2/ and https://sourceforge.net/projects/metasploitable/files/Metasploitable2/",
+  "source": "https://docs.rapid7.com/metasploitable/2/",
+  "ground_truth": [
+    {
+      "vuln_id": "MS2-001",
+      "title": "FTP Anonymous Login / vsftpd 2.3.4 Backdoor",
+      "category": "auth",
+      "cwe_id": "CWE-287",
+      "severity": "CRITICAL",
+      "endpoint": "21/tcp vsftpd 2.3.4",
+      "is_present": true
+    },
+    {
+      "vuln_id": "MS2-002",
+      "title": "OpenSSH Weak Configuration / User Enumeration",
+      "category": "misconfig",
+      "cwe_id": "CWE-16",
+      "severity": "MEDIUM",
+      "endpoint": "22/tcp OpenSSH 4.7p1",
+      "is_present": true
+    },
+    {
+      "vuln_id": "MS2-003",
+      "title": "Telnet Cleartext Authentication",
+      "category": "auth",
+      "cwe_id": "CWE-319",
+      "severity": "HIGH",
+      "endpoint": "23/tcp telnet",
+      "is_present": true
+    },
+    {
+      "vuln_id": "MS2-004",
+      "title": "SMTP Open Relay / Exim",
+      "category": "misconfig",
+      "cwe_id": "CWE-287",
+      "severity": "MEDIUM",
+      "endpoint": "25/tcp smtp",
+      "is_present": true
+    },
+    {
+      "vuln_id": "MS2-005",
+      "title": "Samba MS-RPC Shell Command Injection (CVE-2007-2447)",
+      "category": "rce",
+      "cwe_id": "CWE-78",
+      "severity": "CRITICAL",
+      "endpoint": "139/tcp 445/tcp Samba 3.0.20",
+      "is_present": true
+    },
+    {
+      "vuln_id": "MS2-006",
+      "title": "Apache Tomcat Manager Default Credentials (CVE-2009-3548)",
+      "category": "auth",
+      "cwe_id": "CWE-798",
+      "severity": "CRITICAL",
+      "endpoint": "8180/tcp Apache Tomcat 5.5",
+      "is_present": true
+    },
+    {
+      "vuln_id": "MS2-007",
+      "title": "VNC No Authentication / Weak Password",
+      "category": "auth",
+      "cwe_id": "CWE-306",
+      "severity": "CRITICAL",
+      "endpoint": "5900/tcp VNC",
+      "is_present": true
+    },
+    {
+      "vuln_id": "MS2-008",
+      "title": "UnrealIRCd 3.2.8.1 Backdoor Command Execution",
+      "category": "rce",
+      "cwe_id": "CWE-78",
+      "severity": "CRITICAL",
+      "endpoint": "6667/tcp UnrealIRCd",
+      "is_present": true
+    },
+    {
+      "vuln_id": "MS2-009",
+      "title": "PostgreSQL Weak Credentials / RCE",
+      "category": "auth",
+      "cwe_id": "CWE-798",
+      "severity": "HIGH",
+      "endpoint": "5432/tcp PostgreSQL 8.3",
+      "is_present": true
+    },
+    {
+      "vuln_id": "MS2-010",
+      "title": "DistCC Daemon Unauthenticated Command Execution (CVE-2004-2687)",
+      "category": "rce",
+      "cwe_id": "CWE-306",
+      "severity": "CRITICAL",
+      "endpoint": "3632/tcp distccd 1",
+      "is_present": true
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "target": "dvwa",
+  "version": "latest",
+  "image": "vulnerables/web-dvwa:latest",
+  "digest": "sha256:dae203fe11646a86937bf04db0079adef295f426da68a92b40e3b181f337daa7",
+  "image_id": "sha256:ab0d83586b6e8799bb549ab91914402e47e3bcc7eea0c5cdf43755d56150cc6a",
+  "pinned_tag_alias": "vulnerables/web-dvwa:2.0 -> use :latest digest above",
+  "source": "https://github.com/digininja/DVWA",
+  "ground_truth": [
+    {
+      "vuln_id": "DVWA-001",
+      "title": "SQL Injection (low security)",
+      "category": "sqli",
+      "cwe_id": "CWE-89",
+      "severity": "HIGH",
+      "endpoint": "/vulnerabilities/sqli/",
+      "is_present": true
+    },
+    {
+      "vuln_id": "DVWA-002",
+      "title": "Reflected Cross-Site Scripting",
+      "category": "xss",
+      "cwe_id": "CWE-79",
+      "severity": "MEDIUM",
+      "endpoint": "/vulnerabilities/xss_r/",
+      "is_present": true
+    },
+    {
+      "vuln_id": "DVWA-003",
+      "title": "Stored Cross-Site Scripting",
+      "category": "xss",
+      "cwe_id": "CWE-79",
+      "severity": "MEDIUM",
+      "endpoint": "/vulnerabilities/xss_s/",
+      "is_present": true
+    },
+    {
+      "vuln_id": "DVWA-004",
+      "title": "Command Injection",
+      "category": "rce",
+      "cwe_id": "CWE-78",
+      "severity": "CRITICAL",
+      "endpoint": "/vulnerabilities/exec/",
+      "is_present": true
+    },
+    {
+      "vuln_id": "DVWA-005",
+      "title": "File Inclusion (LFI/RFI)",
+      "category": "path_traversal",
+      "cwe_id": "CWE-98",
+      "severity": "HIGH",
+      "endpoint": "/vulnerabilities/fi/",
+      "is_present": true
+    },
+    {
+      "vuln_id": "DVWA-006",
+      "title": "Cross-Site Request Forgery (CSRF)",
+      "category": "csrf",
+      "cwe_id": "CWE-352",
+      "severity": "MEDIUM",
+      "endpoint": "/vulnerabilities/csrf/",
+      "is_present": true
+    },
+    {
+      "vuln_id": "DVWA-007",
+      "title": "Brute Force / Weak Authentication",
+      "category": "auth",
+      "cwe_id": "CWE-307",
+      "severity": "MEDIUM",
+      "endpoint": "/vulnerabilities/brute/",
+      "is_present": true
+    },
+    {
+      "vuln_id": "DVWA-008",
+      "title": "Insecure File Upload",
+      "category": "file_upload",
+      "cwe_id": "CWE-434",
+      "severity": "HIGH",
+      "endpoint": "/vulnerabilities/upload/",
+      "is_present": true
+    }
+  ]
+}

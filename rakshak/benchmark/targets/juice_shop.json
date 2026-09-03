@@ -1,0 +1,119 @@
+{
+  "target": "juice_shop",
+  "version": "latest",
+  "image": "bkimminich/juice-shop:latest",
+  "digest": "sha256:73c53fbf442e8337b3ea3d98c7e8550308854701ebdfce4cc39768f36b75430e",
+  "image_id": "sha256:0cec496d878c6855a1c81694c9f91564082f418b84aece87538adb8850d2437e",
+  "pinned_alt": "bkimminich/juice-shop:17.2.1 -> manifest unknown; use :latest digest above and record on re-pin",
+  "source": "https://github.com/juice-shop/juice-shop/releases/tag/v17.2.1",
+  "ground_truth": [
+    {
+      "vuln_id": "JS-001",
+      "title": "SQL Injection in /rest/products/search",
+      "category": "sqli",
+      "cwe_id": "CWE-89",
+      "severity": "HIGH",
+      "endpoint": "/rest/products/search",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-002",
+      "title": "Reflected Cross-Site Scripting (XSS) in search query",
+      "category": "xss",
+      "cwe_id": "CWE-79",
+      "severity": "MEDIUM",
+      "endpoint": "/#/search",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-003",
+      "title": "Broken Access Control / Admin Section Exposed",
+      "category": "idor",
+      "cwe_id": "CWE-639",
+      "severity": "HIGH",
+      "endpoint": "/#/administration",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-004",
+      "title": "Sensitive Data Exposure via /api/Users",
+      "category": "sensitive_data_exposure",
+      "cwe_id": "CWE-200",
+      "severity": "HIGH",
+      "endpoint": "/api/Users",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-005",
+      "title": "Insecure JWT Authentication - Weak Secret",
+      "category": "jwt",
+      "cwe_id": "CWE-347",
+      "severity": "CRITICAL",
+      "endpoint": "/rest/user/login",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-006",
+      "title": "Cross-Site Request Forgery (CSRF) / Insecure Direct Object",
+      "category": "idor",
+      "cwe_id": "CWE-352",
+      "severity": "MEDIUM",
+      "endpoint": "/api/BasketItems",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-007",
+      "title": "Unrestricted File Upload / Path Traversal",
+      "category": "path_traversal",
+      "cwe_id": "CWE-22",
+      "severity": "HIGH",
+      "endpoint": "/file-upload",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-008",
+      "title": "Server-Side Request Forgery (SSRF) via image URL",
+      "category": "ssrf",
+      "cwe_id": "CWE-918",
+      "severity": "HIGH",
+      "endpoint": "/api/Config",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-009",
+      "title": "DOM-Based XSS via Angular Route",
+      "category": "xss",
+      "cwe_id": "CWE-79",
+      "severity": "MEDIUM",
+      "endpoint": "/#/track-result",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-010",
+      "title": "Information Disclosure via Error Messages / Stack Traces",
+      "category": "info_disclosure",
+      "cwe_id": "CWE-209",
+      "severity": "LOW",
+      "endpoint": "/rest/products/search",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-011",
+      "title": "NoSQL Injection via search parameter",
+      "category": "injection",
+      "cwe_id": "CWE-943",
+      "severity": "HIGH",
+      "endpoint": "/rest/products/search",
+      "is_present": true
+    },
+    {
+      "vuln_id": "JS-012",
+      "title": "Security Misconfiguration - Exposed Metrics / Swagger",
+      "category": "misconfig",
+      "cwe_id": "CWE-16",
+      "severity": "LOW",
+      "endpoint": "/api-docs",
+      "is_present": true
+    }
+  ]
+}

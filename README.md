@@ -173,6 +173,27 @@ RakshakX is model-agnostic and connects to any cloud or local LLM via LiteLLM.
    - **OpenRouter / Groq / Custom LiteLLM**
 4. Enter your API Key and click **"Save LLM Settings"** (automatically persisted in `.rakshakx/config.json`).
 
+### Option A2: OpenCode Free (zero-setup, no API key)
+
+You can run RakshakX against the free, no-auth **OpenCode Free** gateway hosted at
+`https://opencode.ai/zen/v1` — no API key or account needed. Just point the config at an
+`oc/...` model and RakshakX handles the rest (endpoint, headers, and toolcalling):
+
+```json
+{
+  "provider": "opencode-free",
+  "model": "openai/oc/nemotron-3.5-lightning-free",
+  "api_key": "dummy"
+}
+```
+
+RakshakX maps `openai/oc/<model>` → `https://opencode.ai/zen/v1` (OpenAI-compatible),
+sends the required `x-opencode-client: desktop` header, and keeps the `Authorization`
+header empty so the no-auth gateway accepts the request. If you ever see
+`401 Invalid API key` or a blank response from this provider, make sure the model id
+keeps the `oc/` prefix (that is how RakshakX detects and enables the compatibility
+mode) and that `api_base` is **not** set to a real `localhost:8787` bridge.
+
 ### Option B: Terminal Environment Variables
 
 ```bash

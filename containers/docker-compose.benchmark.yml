@@ -1,0 +1,42 @@
+services:
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    # Pinned digest for Protocol v2.0 reproducibility (recorded 2026-09-02):
+    # sha256:73c53fbf442e8337b3ea3d98c7e8550308854701ebdfce4cc39768f36b75430e (Id: sha256:0cec496d878c6855a1c81694c9f91564082f418b84aece87538adb8850d2437e)
+    # Original spec requested :17.2.1 but manifest unknown on Docker Hub — use :latest digest above and re-pin when :17.2.1 becomes available.
+    container_name: rakshakx-juice-shop
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    # Pinned digest for Protocol v2.0 (2026-09-02):
+    # sha256:dae203fe11646a86937bf04db0079adef295f426da68a92b40e3b181f337daa7 (Id: sha256:ab0d83586b6e8799bb549ab91914402e47e3bcc7eea0c5cdf43755d56150cc6a)
+    # Alias for spec's `vulnerables/web-dvwa:2.0`.
+    container_name: rakshakx-dvwa
+    ports:
+      - "3002:80"
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=dvwa_pass
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/login.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+networks:
+  default:
+    name: rakshakx-benchmark
+
+# Metasploitable2 is distributed as a VM OVA (not a Docker image).
+# For Protocol v2.0 network/service tests, import the OVA in VirtualBox/VMware:
+#   https://sourceforge.net/projects/metasploitable/files/Metasploitable2/
+#   https://docs.rapid7.com/metasploitable/2/
+# Record the snapshot ID in environment_freeze.json target.snapshot field.

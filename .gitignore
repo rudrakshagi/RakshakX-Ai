@@ -55,10 +55,7 @@ web/node_modules/
 rakshak.config.json
 .rakshakx/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-.DS_Store
-Thumbs.db
+# Benchmark artifacts (generated)
+reports/
+package-lock.json
+.opencode/
