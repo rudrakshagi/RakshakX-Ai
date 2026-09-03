@@ -6,7 +6,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from agents import RunContextWrapper, function_tool
 
@@ -85,10 +85,10 @@ async def view_agent_graph(ctx: RunContextWrapper) -> str:
 @function_tool(timeout=30)
 async def send_message_to_agent(
     ctx: RunContextWrapper,
-    target_agent_id: str,
-    message: str,
-    message_type: Literal["query", "instruction", "information"] = "information",
-    priority: Literal["low", "normal", "high", "urgent"] = "normal",
+    target_agent_id: Annotated[str, "ID of the destination agent's mailbox."],
+    message: Annotated[str, "Content of the message to deliver."],
+    message_type: Annotated[Literal["query", "instruction", "information"], "Kind of message being sent."] = "information",
+    priority: Annotated[Literal["low", "normal", "high", "urgent"], "Delivery priority."] = "normal",
 ) -> str:
     """Send an asynchronous message to another agent's mailbox."""
     inner = _ctx(ctx)
@@ -126,8 +126,8 @@ async def send_message_to_agent(
 @function_tool(timeout=300)
 async def wait_for_agents(
     ctx: RunContextWrapper,
-    reason: str = "Waiting for child agents to complete their assigned tasks",
-    timeout_seconds: int = 180,
+    reason: Annotated[str, "Human-readable reason for waiting on child agents."] = "Waiting for child agents to complete their assigned tasks",
+    timeout_seconds: Annotated[int, "Maximum seconds to wait before timing out (default 180)."] = 180,
 ) -> str:
     """Pause execution until a child agent finishes or sends a mailbox message."""
     inner = _ctx(ctx)
@@ -149,8 +149,9 @@ async def wait_for_agents(
         if not arrived:
             await coordinator.mark_running(me)
             return json.dumps({"success": True, "status": "timeout", "waited_seconds": timeout_seconds})
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("wait_for_agents interrupted for %s: %s", me, exc)
+        return json.dumps({"success": False, "error": f"Wait interrupted: {exc}"})
 
     pending, _ = await coordinator.consume_pending(me, include_items=True)
     await coordinator.mark_running(me)
@@ -160,10 +161,10 @@ async def wait_for_agents(
 @function_tool(timeout=120)
 async def create_agent(
     ctx: RunContextWrapper,
-    name: str,
-    task: str,
-    inherit_context: bool = True,
-    skills: list[str] | None = None,
+    name: Annotated[str, "Human-readable name for the specialist subagent."],
+    task: Annotated[str, "Focused objective the subagent should pursue."],
+    inherit_context: Annotated[bool, "Whether the subagent inherits the parent's context (default true)."] = True,
+    skills: Annotated[list[str] | None, "Optional skill playbooks for the subagent (e.g. ['sql_injection'])."] = None,
 ) -> str:
     """Spawn a focused specialist subagent (e.g. 'Auth Specialist', 'SQLi Prober') in parallel."""
     inner = _ctx(ctx)
@@ -185,6 +186,8 @@ async def create_agent(
             skills=list(skills or []),
             inherit_context=inherit_context,
         )
+        if isinstance(res, dict) and not res.get("success", True):
+            return json.dumps(res, ensure_ascii=False)
         return json.dumps(res, ensure_ascii=False)
     except Exception as exc:
         logger.exception("Failed to spawn child agent '%s': %s", name, exc)
@@ -194,10 +197,10 @@ async def create_agent(
 @function_tool(timeout=30)
 async def agent_finish(
     ctx: RunContextWrapper,
-    result_summary: str,
-    findings: list[str] | None = None,
-    success: bool = True,
-    final_recommendations: list[str] | None = None,
+    result_summary: Annotated[str, "Summary of findings and work completed by this subagent."],
+    findings: Annotated[list[str] | None, "Optional list of key findings observed."] = None,
+    success: Annotated[bool, "Whether the subagent's work succeeded."] = True,
+    final_recommendations: Annotated[list[str] | None, "Optional recommended next steps for the parent."] = None,
 ) -> str:
     """Subagent termination tool. Posts structured completion report to parent's inbox."""
     inner = _ctx(ctx)

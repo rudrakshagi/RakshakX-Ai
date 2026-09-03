@@ -30,16 +30,44 @@ from rakshak.tools.todo.tools import create_todo, list_todos, mark_todo_done
 logger = logging.getLogger(__name__)
 
 
+def _is_optional_prop(prop: Any) -> bool:
+    """A property is optional if it has a default or is explicitly nullable."""
+    if isinstance(prop, dict):
+        if "default" in prop:
+            return True
+        any_of = prop.get("anyOf")
+        if isinstance(any_of, list):
+            return any(t.get("type") == "null" for t in any_of if isinstance(t, dict))
+        if prop.get("type") == "null":
+            return True
+    return False
+
+
 def _normalize_tool_schema(tool: Tool) -> Tool:
-    """Make generated JSON schemas acceptable to strict providers (e.g. Groq)."""
+    """Make generated JSON schemas well-formed and natural for LLMs.
+
+    - Ensures a JSON object root with ``properties`` and ``additionalProperties: false``
+      (required by strict providers such as Groq).
+    - Recomputes ``required`` so only parameters without a default or without a nullable
+      type are required — the SDK otherwise marks every parameter as required, which
+      produces unnatural schemas for optional arguments like ``first`` or ``skills``.
+    """
     schema = getattr(tool, "params_json_schema", None)
     if not isinstance(schema, dict):
         return tool
     schema.setdefault("type", "object")
     schema["additionalProperties"] = False
     props = schema.get("properties")
-    if not props:
+    if not isinstance(props, dict) or not props:
         schema.pop("required", None)
+        return tool
+    required = schema.get("required")
+    if isinstance(required, list):
+        filtered = [name for name in required if not _is_optional_prop(props.get(name))]
+        if filtered:
+            schema["required"] = filtered
+        else:
+            schema.pop("required", None)
     return tool
 
 
@@ -107,7 +135,7 @@ def build_rakshak_agent(
     return SandboxAgent(
         name=name,
         base_instructions=base_instructions,
-        instructions="You are RakshakX, a web security scanning agent. Follow the base instructions.",
+        instructions="",
         tools=tools,
         tool_use_behavior=_finish_tool_use_behavior,
         capabilities=[Shell()],

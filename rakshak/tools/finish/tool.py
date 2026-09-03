@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Annotated
 
 from agents import RunContextWrapper, function_tool
 
@@ -13,10 +14,10 @@ logger = logging.getLogger(__name__)
 @function_tool(timeout=60)
 async def finish_scan(
     ctx: RunContextWrapper,
-    executive_summary: str,
-    methodology: str,
-    technical_analysis: str,
-    recommendations: str,
+    executive_summary: Annotated[str, "Non-empty high-level summary of the assessment for executives."],
+    methodology: Annotated[str, "Non-empty description of the testing methodology and tools used."],
+    technical_analysis: Annotated[str, "Non-empty technical analysis of confirmed findings and evidence."],
+    recommendations: Annotated[str, "Non-empty prioritized remediation and hardening recommendations."],
 ) -> str:
     """Finalize the security assessment and persist customer-facing reports.
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Annotated
 
 from agents import RunContextWrapper, function_tool
 
@@ -42,7 +43,11 @@ def _persist_todos(state_dir: Path | None) -> None:
 
 
 @function_tool(timeout=10)
-async def create_todo(ctx: RunContextWrapper, id: str, task: str) -> str:
+async def create_todo(
+    ctx: RunContextWrapper,
+    id: Annotated[str, "Unique identifier for the task (short slug)."],
+    task: Annotated[str, "Human-readable description of the task."],
+) -> str:
     """Create a new task item in your pentest work checklist."""
     _TODOS[id] = TodoItem(id=id, task=task, status="pending")
     return json.dumps({"success": True, "created": id, "task": task})
@@ -56,7 +61,10 @@ async def list_todos(ctx: RunContextWrapper) -> str:
 
 
 @function_tool(timeout=10)
-async def mark_todo_done(ctx: RunContextWrapper, id: str) -> str:
+async def mark_todo_done(
+    ctx: RunContextWrapper,
+    id: Annotated[str, "Identifier of the task to mark as completed."],
+) -> str:
     """Mark an assigned task as completed."""
     if id in _TODOS:
         _TODOS[id].status = "done"

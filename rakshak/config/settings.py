@@ -14,6 +14,10 @@ DEFAULT_SANDBOX_IMAGE: str = "rakshakx/sandbox:latest"
 
 class LLMSettings(BaseModel):
     """Configuration for LLM models and API parameters."""
+    provider: str | None = Field(
+        default=None,
+        description="Provider identifier (e.g. opencode-free, openrouter, groq, ollama, openai).",
+    )
     model: str = Field(
         default="openai/gpt-5.4",
         description="LLM identifier compatible with LiteLLM (e.g. openai/gpt-5.4, anthropic/claude-3-7-sonnet)",
@@ -33,6 +37,10 @@ class LLMSettings(BaseModel):
     reasoning_effort: Literal["low", "medium", "high"] | None = Field(
         default="medium",
         description="Reasoning effort tier for reasoning models (e.g. o1, o3, o3-mini)",
+    )
+    temperature: float | None = Field(
+        default=None,
+        description="Sampling temperature override (0.0-2.0)",
     )
     force_required_tool_choice: bool = Field(
         default=False,
@@ -99,6 +107,10 @@ class RakshakSettings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     context: ContextSettings = Field(default_factory=ContextSettings)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    max_budget_usd: float = Field(
+        default=10.0,
+        description="Maximum budget in USD for the entire scan",
+    )
 
 
 _GLOBAL_SETTINGS: RakshakSettings | None = None
@@ -118,14 +130,16 @@ def load_settings() -> RakshakSettings:
     if _GLOBAL_SETTINGS is None:
         import json
         settings = RakshakSettings()
-        
+
         config_path = Path(".rakshakx") / "config.json"
         legacy_path = Path("rakshak.config.json")
         config_file = config_path if config_path.exists() else (legacy_path if legacy_path.exists() else None)
-        
+
         if config_file:
             try:
                 cfg = json.loads(config_file.read_text(encoding="utf-8"))
+                if cfg.get("provider"):
+                    settings.llm.provider = cfg["provider"]
                 if cfg.get("model"):
                     settings.llm.model = cfg["model"]
                 if cfg.get("api_key"):

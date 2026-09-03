@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Annotated
 
 from agents import RunContextWrapper, function_tool
 
@@ -31,7 +32,10 @@ def _list_all_skills() -> list[str]:
 
 
 @function_tool(timeout=10)
-async def load_skill(ctx: RunContextWrapper, skill_name: str) -> str:
+async def load_skill(
+    ctx: RunContextWrapper,
+    skill_name: Annotated[str, "Skill playbook to load, e.g. 'sql_injection', 'idor', 'ssrf'."],
+) -> str:
     """Load specialized offensive methodology and exploit playbook for a vulnerability or tool.
 
     Examples: 'authentication_jwt', 'idor', 'sql_injection', 'ssrf', 'race_conditions'.
@@ -47,10 +51,16 @@ async def load_skill(ctx: RunContextWrapper, skill_name: str) -> str:
 
     try:
         content = skill_file.read_text(encoding="utf-8")
+        truncated = content
+        if len(content) // 3 > 400:
+            truncated = (
+                content[: 400 * 3]
+                + "\n\n[... playbook truncated by RakshakX to save context tokens ...]\n"
+            )
         return json.dumps({
             "success": True,
             "skill": skill_name,
-            "playbook": content,
+            "playbook": truncated,
         }, ensure_ascii=False)
     except Exception as exc:
         return json.dumps({"success": False, "error": f"Could not read skill file: {exc}"})

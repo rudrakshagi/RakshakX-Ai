@@ -22,22 +22,29 @@ def configure_spill_writer(writer: SpillWriter | None) -> None:
     _spill_writer = writer
 
 
+def _estimate_chars(text: str) -> int:
+    """Rough char-based token estimate (1 token ~= 3 chars for mixed code/text)."""
+    return len(text) // 3
+
+
 def bound_text(
     text: str,
     *,
     max_lines: int = 500,
     max_bytes: int = 100_000,
+    max_tokens: int = 12_000,
 ) -> str:
-    """Truncate text exceeding line or byte ceilings with a clean human-readable marker."""
+    """Truncate text exceeding line, byte, or token ceilings with a clean marker."""
     if not text:
         return text
 
     encoded = text.encode("utf-8")
     is_byte_capped = len(encoded) > max_bytes
+    is_token_capped = _estimate_chars(text) > max_tokens
     lines = text.splitlines(keepends=True)
     is_line_capped = len(lines) > max_lines
 
-    if not is_byte_capped and not is_line_capped:
+    if not is_byte_capped and not is_line_capped and not is_token_capped:
         return text
 
     # Truncate by lines first
@@ -48,6 +55,11 @@ def bound_text(
     if len(truncated_str.encode("utf-8")) > max_bytes:
         truncated_bytes = truncated_str.encode("utf-8")[:max_bytes]
         truncated_str = truncated_bytes.decode("utf-8", errors="ignore")
+
+    # Check token cap on the remaining string
+    if _estimate_chars(truncated_str) > max_tokens:
+        truncated_chars = max_tokens * 3
+        truncated_str = truncated_str[:truncated_chars]
 
     total_lines = len(lines)
     remaining_lines = max(0, total_lines - max_lines)
@@ -65,13 +77,18 @@ async def bound_and_store(
     *,
     max_lines: int = 500,
     max_bytes: int = 100_000,
+    max_tokens: int = 12_000,
 ) -> str:
     """Bound tool output; if oversized, spill full text to sandbox disk and reference path."""
     if not text:
         return text
 
     encoded = text.encode("utf-8")
-    if len(encoded) <= max_bytes and len(text.splitlines()) <= max_lines:
+    if (
+        len(encoded) <= max_bytes
+        and len(text.splitlines()) <= max_lines
+        and _estimate_chars(text) <= max_tokens
+    ):
         return text
 
     output_id = f"out_{uuid.uuid4().hex[:8]}"
@@ -83,7 +100,7 @@ async def bound_and_store(
         except Exception:
             logger.exception("Failed to write spilled tool output to sandbox workspace")
 
-    bounded = bound_text(text, max_lines=max_lines, max_bytes=max_bytes)
+    bounded = bound_text(text, max_lines=max_lines, max_bytes=max_bytes, max_tokens=max_tokens)
 
     if spill_path:
         header = (

@@ -10,6 +10,32 @@ from agents.extensions.models.litellm_provider import LitellmProvider
 
 logger = logging.getLogger(__name__)
 
+OPCODE_BASE_URL = "https://opencode.ai/zen/v1"
+_OPCODE_CLIENT_HEADER = "desktop"
+
+
+def _is_opencode_free(settings: Any, model: str | None = None) -> bool:
+    """Detect the no-auth OpenCode Free provider (alias `oc` / `opencode-free`)."""
+    model = model or (getattr(getattr(settings, "llm", None), "model", None) or "")
+    model_lower = model.lower()
+    provider = str(getattr(getattr(settings, "llm", None), "provider", "") or "").lower()
+    return (
+        provider in ("opencode", "opencode-free", "opencode_free", "oc")
+        or model_lower.startswith("openai/oc/")
+        or model_lower.startswith("oc/")
+    )
+
+
+def _normalize_opencode_model(model: str | None) -> str:
+    """Map an `oc/...` opencode-free model id to the openai-compatible id sent upstream."""
+    if not model:
+        return "muse-spark-1.3-contributor-free"
+    if model.lower().startswith("openai/oc/"):
+        return model[10:]
+    if model.lower().startswith("oc/"):
+        return model[3:]
+    return model
+
 
 def _resolve_api_key(settings: Any) -> str | None:
     """Resolve the provider API key from settings or standard env variables."""
@@ -42,9 +68,15 @@ class RakshakProvider(LitellmProvider):
 
         self.settings = settings
         _set_provider_env(settings)
+        is_opcode = _is_opencode_free(settings)
 
         def get_model(model_name: str | None) -> Any:
             model = model_name or "openai/gpt-4o"
+            if is_opcode:
+                model = "openai/" + _normalize_opencode_model(model)
+                _configure_opencode_headers()
+                base_url = OPCODE_BASE_URL
+                return LitellmModel(model=model, base_url=base_url, api_key="dummy")
             api_key = _resolve_api_key(settings)
             api_base = getattr(getattr(settings, "llm", None), "api_base", None) if settings else None
             return LitellmModel(model=model, base_url=api_base, api_key=api_key) if api_key else LitellmModel(model=model, base_url=api_base)
@@ -80,9 +112,30 @@ def configure_model_defaults(settings: Any) -> None:
         litellm.drop_params = True
         litellm.telemetry = False
         litellm.request_timeout = settings.llm.timeout  # type: ignore[attr-defined]
+        if _is_opencode_free(settings):
+            _configure_opencode_headers()
+            return
         api_key = _resolve_api_key(settings)
         if api_key:
             _set_provider_env(settings)
+    except ImportError:
+        pass
+
+
+def _configure_opencode_headers() -> None:
+    """Configure LiteLLM to talk to the no-auth OpenCode Free endpoint.
+
+    The Zen gateway is ``noAuth``: it rejects a non-empty invalid ``Authorization``
+    header but honours ``Authorization: `` (empty). LiteLLM's OpenAI provider demands
+    a key value, so we supply a dummy key and override the header to empty while
+    sending the ``x-opencode-client`` header the gateway expects.
+    """
+    try:
+        import litellm
+        litellm.headers = {  # type: ignore[assignment]
+            "x-opencode-client": _OPCODE_CLIENT_HEADER,
+            "Authorization": "",
+        }
     except ImportError:
         pass
 

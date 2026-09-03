@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Annotated
 
 from agents import RunContextWrapper, function_tool
 
@@ -22,7 +23,11 @@ def hydrate_notes_from_disk(state_dir: Path) -> None:
 
 
 @function_tool(timeout=10)
-async def create_note(ctx: RunContextWrapper, title: str, content: str) -> str:
+async def create_note(
+    ctx: RunContextWrapper,
+    title: Annotated[str, "Short unique title for the note."],
+    content: Annotated[str, "Full note body (e.g. leaked endpoints, creds, token structures)."],
+) -> str:
     """Create a persistent research note (e.g. leaked endpoints, creds, token structures)."""
     _NOTES[title] = content
     return json.dumps({"success": True, "title": title, "length": len(content)})
@@ -35,7 +40,10 @@ async def list_notes(ctx: RunContextWrapper) -> str:
 
 
 @function_tool(timeout=10)
-async def get_note(ctx: RunContextWrapper, title: str) -> str:
+async def get_note(
+    ctx: RunContextWrapper,
+    title: Annotated[str, "Title of the note to retrieve."],
+) -> str:
     """Retrieve full content of a previously saved note."""
     if title in _NOTES:
         return json.dumps({"success": True, "title": title, "content": _NOTES[title]})

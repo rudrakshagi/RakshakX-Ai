@@ -365,7 +365,8 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
 
             def _get_requested_run_dir() -> Path:
                 # Support ?run=scan-xxxx or ?scan_id=xxx or ?id=xxx for historic selection
-                run_id = (query.get("run") or query.get("scan_id") or query.get("id") or [None])[0]
+                run_q = query.get("run") or query.get("scan_id") or query.get("id")
+                run_id: str | None = run_q[0] if run_q else None
                 if run_id:
                     cand = run_dir_for(run_id)
                     if cand.exists():
@@ -373,9 +374,10 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 return _resolve_run_dir(run_dir)
 
             def _get_artifact_dir(filename: str) -> Path:
-                run_id = (query.get("run") or query.get("scan_id") or query.get("id") or [None])[0]
-                if run_id:
-                    cand = run_dir_for(run_id)
+                run_q2 = query.get("run") or query.get("scan_id") or query.get("id")
+                run_id2: str | None = run_q2[0] if run_q2 else None
+                if run_id2:
+                    cand = run_dir_for(run_id2)
                     if cand.exists():
                         return cand
                 return _resolve_artifact_dir(run_dir, filename)
@@ -577,7 +579,11 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
 
             if path == "/api/benchmark/repeatability":
                 # Serve summary from latest repeatability run if exists
-                for cand in [Path("reports/benchmark_v2/repeatability_summary.json"), Path("reports/benchmark_v2/summary.json")]:
+                for cand in [
+                    Path("reports/benchmark_v2/repeatability/repeatability_summary.json"),
+                    Path("reports/benchmark_v2/repeatability_summary.json"),
+                    Path("reports/benchmark_v2/summary.json"),
+                ]:
                     if cand.exists():
                         self.send_response(HTTPStatus.OK)
                         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -626,9 +632,9 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                                 # first heading or second line as description
                                 desc = ""
                                 for line in text.splitlines():
-                                    l = line.strip()
-                                    if l and not l.startswith("#") and len(l) > 20:
-                                        desc = l[:180]
+                                    stripped = line.strip()
+                                    if stripped and not stripped.startswith("#") and len(stripped) > 20:
+                                        desc = stripped[:180]
                                         break
                                 if not desc:
                                     desc = text[:180]

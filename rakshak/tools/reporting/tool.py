@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from agents import RunContextWrapper, function_tool
 from cvss import CVSS3
@@ -40,16 +40,19 @@ def _calculate_cvss(breakdown: dict[str, str]) -> tuple[float, str, str]:
 @function_tool(timeout=60, strict_mode=False)
 async def create_vulnerability_report(
     ctx: RunContextWrapper,
-    title: str,
-    description: str,
-    category: str,
-    cwe_id: str,
-    cvss_metrics: dict[str, str],
-    reproduction_steps: list[str],
-    exploit_poc: str,
-    affected_endpoint: str | None = None,
-    code_locations: list[dict[str, Any]] | None = None,
-    remediation_patch: str | None = None,
+    title: Annotated[str, "Concise title for the vulnerability finding."],
+    description: Annotated[str, "Detailed technical description of the vulnerability and impact."],
+    category: Annotated[str, "Vulnerability category, e.g. 'SQL Injection', 'XSS', 'IDOR'."],
+    cwe_id: Annotated[str, "CWE identifier, e.g. 'CWE-89'."],
+    cvss_metrics: Annotated[
+        dict[str, str],
+        "CVSS 3.1 breakdown: attack_vector, attack_complexity, privileges_required, user_interaction, scope, confidentiality, integrity, availability.",
+    ],
+    reproduction_steps: Annotated[list[str], "Ordered, reproducible steps (with the exact PoC command) to confirm the finding."],
+    exploit_poc: Annotated[str, "Reproducible proof-of-concept payload or command that triggered the vulnerability."],
+    affected_endpoint: Annotated[str | None, "Target endpoint or URL where the finding was confirmed."] = None,
+    code_locations: Annotated[list[dict[str, Any]] | None, "Optional source code locations (file/line) relevant to the finding."] = None,
+    remediation_patch: Annotated[str | None, "Optional recommended remediation or patch guidance."] = None,
 ) -> str:
     """Register a confirmed, PoC-verified vulnerability finding.
 

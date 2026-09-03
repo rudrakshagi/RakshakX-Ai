@@ -11,6 +11,35 @@ logger = logging.getLogger(__name__)
 
 LLM_TURN_KEY = "llm_turn"
 
+_MODEL_COST_PER_1K: dict[str, tuple[float, float]] = {
+    "gpt-4o": (0.0025, 0.01),
+    "gpt-4o-mini": (0.00015, 0.0006),
+    "gpt-5": (0.0025, 0.01),
+    "claude-3-opus": (0.015, 0.075),
+    "claude-3-sonnet": (0.003, 0.015),
+    "claude-3-haiku": (0.00025, 0.00125),
+    "claude-3.5-sonnet": (0.003, 0.015),
+    "claude-3.5-haiku": (0.0008, 0.004),
+    "o1": (0.015, 0.06),
+    "o3": (0.01, 0.04),
+    "o3-mini": (0.0011, 0.0044),
+    "o4-mini": (0.0011, 0.0044),
+}
+
+
+def _estimate_model_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Estimate USD cost using model-specific pricing tiers."""
+    model_lower = model.lower()
+
+    for pattern, (prompt_price, completion_price) in _MODEL_COST_PER_1K.items():
+        if pattern in model_lower:
+            return (prompt_tokens / 1000.0) * prompt_price + (completion_tokens / 1000.0) * completion_price
+
+    if "groq" in model_lower:
+        return (prompt_tokens / 1000.0) * 0.0001 + (completion_tokens / 1000.0) * 0.0001
+
+    return (prompt_tokens / 1000.0) * 0.005 + (completion_tokens / 1000.0) * 0.015
+
 
 class BudgetExceededError(AgentsException):
     """Raised when the total LLM cost exceeds the hard scan ceiling."""
@@ -37,8 +66,6 @@ def recomputed_budget_flags(
     if total_cost_usd >= max_budget_usd:
         return True, True
 
-    # When spend reaches 90% of budget, trigger reserve stop so subagents wrap up
-    # and save the final 10% for the root agent's finish_scan report
     if total_cost_usd >= (max_budget_usd * 0.9):
         return False, True
 
@@ -73,20 +100,19 @@ class ReportUsageHooks:
         """Process turn token usage and verify against budget ceilings."""
         self.total_turns += 1
         if usage and hasattr(usage, "total_tokens"):
+            prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+            completion_tokens = getattr(usage, "completion_tokens", 0) or 0
             logger.info(
                 "Turn tokens: prompt=%s completion=%s (total=%s)",
-                getattr(usage, "prompt_tokens", "?"),
-                getattr(usage, "completion_tokens", "?"),
+                prompt_tokens,
+                completion_tokens,
                 usage.total_tokens,
             )
+            estimated_cost = _estimate_model_cost(self.model, prompt_tokens, completion_tokens)
+            self.total_cost_usd += estimated_cost
+
         if self.total_turns > self.max_turns:
             raise BudgetExceededError(f"Exceeded max allowed turns ({self.max_turns}) for this scan.")
-
-        # Estimate cost based on model pricing if usage stats available
-        if usage and hasattr(usage, "total_tokens"):
-            # Placeholder conservative estimate: ~$0.005 per 1k tokens average
-            estimated_cost = (usage.total_tokens / 1000.0) * 0.005
-            self.total_cost_usd += estimated_cost
 
         budget_stopped, _ = recomputed_budget_flags(
             self.total_cost_usd,

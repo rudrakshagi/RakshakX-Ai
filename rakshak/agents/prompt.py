@@ -16,6 +16,17 @@ OPERATIONAL DIRECTIVES:
 5. CONCURRENCY: If a task is large or specialized (e.g. testing complex JWT auth or SQL injection), spawn a dedicated subagent with `create_agent` and await their report with `wait_for_agents`.
 """
 
+# Lazy import to avoid circular deps at load time
+_BENCHMARK_PROMPT_CACHE: dict[str, str] | None = None
+
+
+def _get_benchmark_prompt(mode: str) -> str | None:
+    try:
+        from rakshak.benchmark.prompts import get_prompt
+        return get_prompt(mode)
+    except Exception:
+        return None
+
 
 def render_system_prompt(
     *,
@@ -36,6 +47,17 @@ def render_system_prompt(
 
     if skills:
         lines.append(f"- Active Specialization Skills: {', '.join(skills)}")
+
+    # Inject verbatim benchmark prompt when scan_mode is a benchmark code (T01, A.1, etc.)
+    bench_prompt = _get_benchmark_prompt(scan_mode)
+    if bench_prompt:
+        lines.append(f"\n## BENCHMARK PROTOCOL — VERBATIM PROMPT ({scan_mode.upper()})\n{bench_prompt}")
+
+    # Optional extra context (target/scope) injected by runner
+    if system_prompt_context:
+        for k, v in system_prompt_context.items():
+            if v:
+                lines.append(f"- {k}: {v}")
 
     if is_root:
         lines.append(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from agents import RunContextWrapper, function_tool
 
@@ -27,10 +27,10 @@ def _get_client(ctx: RunContextWrapper) -> Any | None:
 @function_tool(timeout=60)
 async def list_requests(
     ctx: RunContextWrapper,
-    httpql_filter: str | None = None,
-    first: int = 30,
+    httpql_filter: Annotated[str | None, "HTTPQL filter to query requests (e.g. resp.code.gte:400). Empty for all."] = None,
+    first: Annotated[int, "Maximum number of requests to return (capped at 15)."] = 30,
 ) -> str:
-    """List captured HTTP requests from the Caido proxy with HTTPQL filtering.
+    """    List captured HTTP requests from the Caido proxy with HTTPQL filtering.
 
     Examples of HTTPQL syntax:
     - resp.code.gte:400 (all error responses)
@@ -41,8 +41,9 @@ async def list_requests(
     if client is None:
         return json.dumps({"success": False, "error": "Caido proxy client is not active in this session."})
 
+    capped = max(1, min(first, 15))
     async with _CAIDO_CALL_LOCK:
-        res = await caido_api.query_requests(client, httpql_filter=httpql_filter, first=first)
+        res = await caido_api.query_requests(client, httpql_filter=httpql_filter, first=capped)
 
     return json.dumps({"success": True, "data": res}, ensure_ascii=False)
 
@@ -50,7 +51,7 @@ async def list_requests(
 @function_tool(timeout=60)
 async def view_request(
     ctx: RunContextWrapper,
-    request_id: str,
+    request_id: Annotated[str, "ID of the captured request to inspect (from list_requests)."],
 ) -> str:
     """Inspect full raw request and response headers and bodies for a captured request ID."""
     client = _get_client(ctx)

@@ -10,6 +10,13 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+INTEGRITY_STATEMENT_PDF = (
+    "The benchmark measures RakshakX on selected controlled environments and does not "
+    "establish universal vulnerability detection, zero-day detection, enterprise-scale "
+    "performance, or security of arbitrary real-world systems."
+)
+
+
 def generate_pdf_report(
     *,
     scan_id: str,
@@ -122,49 +129,91 @@ def generate_pdf_report(
     story.append(t)
     story.append(Spacer(1, 15))
 
-    # Executive Summary Section
+    # 1. Executive Summary
     story.append(Paragraph("1. Executive Summary", h2_style))
     story.append(Paragraph(executive_summary or "Autonomous security assessment completed with dynamic verification.", body_style))
     story.append(Spacer(1, 10))
 
-    # Methodology Section
-    story.append(Paragraph("2. Assessment Methodology", h2_style))
+    # 2. Scope and Target
+    story.append(Paragraph("2. Scope and Target", h2_style))
+    story.append(Paragraph(f"Target: {target} &nbsp;|&nbsp; Scan ID: {scan_id} &nbsp;|&nbsp; Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}", body_style))
+    story.append(Spacer(1, 8))
+
+    # 3. Methodology
+    story.append(Paragraph("3. Assessment Methodology", h2_style))
     story.append(Paragraph(methodology or "Conducted dynamic multi-agent probing inside an isolated Kali Linux sandbox.", body_style))
+    if technical_analysis:
+        story.append(Paragraph(technical_analysis, body_style))
     story.append(Spacer(1, 10))
 
-    # Technical Analysis
-    story.append(Paragraph("3. Technical Analysis", h2_style))
-    story.append(Paragraph(technical_analysis or "Target endpoints were mapped, probed, and exploited programmatically.", body_style))
-    story.append(Spacer(1, 15))
+    # 4. Environment and Tool Information
+    story.append(Paragraph("4. Environment and Tool Information", h2_style))
+    story.append(Paragraph("Captured in environment_freeze.json (Python, OS, hardware, Docker, LLM, security tools, target, config). See benchmark artifacts for full freeze and integrity hash.", body_style))
+    story.append(Spacer(1, 10))
 
-    # Verified Findings
-    story.append(Paragraph("4. Confirmed Vulnerability Findings", h2_style))
-    if not vulnerabilities:
-        story.append(Paragraph("<i>No confirmed vulnerabilities were identified during this assessment.</i>", body_style))
-    else:
-        for idx, v in enumerate(vulnerabilities, start=1):
+    # Partition findings by tier
+    confirmed = [v for v in vulnerabilities if (v.get("verification_status") or "confirmed").lower() == "confirmed" or (not v.get("verification_status") and v.get("verified") is not False)]
+    probable = [v for v in vulnerabilities if (v.get("verification_status") or "").lower() == "probable"]
+    unconfirmed = [v for v in vulnerabilities if (v.get("verification_status") or "").lower() == "unconfirmed"]
+    has_tier = any(v.get("verification_status") for v in vulnerabilities)
+    if not has_tier and vulnerabilities:
+        # backwards compat: treat all as confirmed if no tier set
+        confirmed = vulnerabilities
+        probable = []
+        unconfirmed = []
+
+    def _add_tier(title_text: str, tier_vulns: list[dict[str, Any]]) -> None:
+        story.append(Paragraph(title_text, h2_style))
+        if not tier_vulns:
+            story.append(Paragraph("<i>None in this tier.</i>", body_style))
+            story.append(Spacer(1, 6))
+            return
+        for idx, v in enumerate(tier_vulns, start=1):
             title = v.get("title", "Untitled Vulnerability")
             sev = v.get("severity", "medium").upper()
             score = v.get("cvss_score", "N/A")
             ep = v.get("endpoint", "N/A")
             desc = v.get("description", "No description provided.")
             poc = v.get("poc", "# No PoC provided")
-
-            story.append(Paragraph(f"<b>{idx}. {title}</b> — <font color='#b91c1c'><b>{sev} (CVSS {score})</b></font>", h2_style))
-            story.append(Paragraph(f"<b>Affected Target:</b> <code>{ep}</code> &nbsp;|&nbsp; <b>CWE:</b> {v.get('cwe_id', 'N/A')}", body_style))
+            vs = v.get("verification_status", "Confirmed")
+            conf = v.get("confidence", vs)
+            story.append(Paragraph(f"<b>{idx}. {title}</b> — <font color='#b91c1c'><b>{sev} (CVSS {score})</b></font> — {vs}", h2_style))
+            story.append(Paragraph(f"<b>Affected:</b> <code>{ep}</code> &nbsp;|&nbsp; <b>CWE:</b> {v.get('cwe_id', 'N/A')} &nbsp;|&nbsp; <b>Confidence:</b> {conf}", body_style))
             story.append(Paragraph(f"<b>Description:</b> {desc}", body_style))
-            story.append(Paragraph("<b>Proof of Concept Command / Script:</b>", body_style))
+            story.append(Paragraph(f"<b>Impact:</b> {v.get('impact', 'See severity and CVSS vector.')}", body_style))
+            story.append(Paragraph("<b>Evidence / Proof of Concept:</b>", body_style))
             story.append(Paragraph(poc.replace("<", "&lt;").replace(">", "&gt;"), code_style))
-
-            patch = v.get("remediation_patch")
+            patch = v.get("remediation_patch") or v.get("remediation")
             if patch:
-                story.append(Paragraph("<b>Remediation Guidance:</b>", body_style))
+                story.append(Paragraph("<b>Remediation:</b>", body_style))
                 story.append(Paragraph(patch.replace("<", "&lt;").replace(">", "&gt;"), code_style))
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 8))
 
-    # Recommendations Section
-    story.append(Paragraph("5. Strategic Recommendations", h2_style))
-    story.append(Paragraph(recommendations or "Implement secure input sanitization, parameterized queries, and strict access controls.", body_style))
+    # 5, 6, 7 tiers
+    _add_tier("5. Confirmed Findings", confirmed)
+    _add_tier("6. Probable Findings", probable)
+    _add_tier("7. Unconfirmed Observations", unconfirmed)
+
+    story.append(Paragraph("8. Evidence for Each Material Finding", h2_style))
+    story.append(Paragraph("Each finding above includes reproduction PoC, endpoint, and confidence. Evidence is retained in sandbox spillway and Caido proxy logs.", body_style))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("9. Severity and Confidence", h2_style))
+    story.append(Paragraph("Severity from CVSS 3.1 vector; confidence mirrors verification status (Confirmed=high, Probable=medium, Unconfirmed=low).", body_style))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("10. Impact", h2_style))
+    story.append(Paragraph("Per-finding impact is listed above; where not explicit, severity is the primary risk indicator.", body_style))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("11. Remediation", h2_style))
+    story.append(Paragraph(recommendations or "Apply parameterized queries, output encoding, least privilege, strict access controls, and patch management.", body_style))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("12. Limitations", h2_style))
+    story.append(Paragraph(
+        "Assessment is point-in-time, scope-limited, and tool-assisted. Coverage depends on target state, authentication, and rate limits. Findings require human review before remediation. "
+        + INTEGRITY_STATEMENT_PDF, body_style))
+    story.append(Spacer(1, 12))
+    story.append(HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#cbd5e1"), spaceAfter=6))
+    story.append(Paragraph(f"<i>Integrity Statement:</i> {INTEGRITY_STATEMENT_PDF}", body_style))
+    story.append(Paragraph("<i>Report generated by RakshakX Community Edition — Rudraksh AGI (GSTIN 24NKPM5455A1ZX).</i>", body_style))
 
     doc.build(story)
     logger.info("Generated PDF assessment report at %s", output_path)
