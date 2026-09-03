@@ -46,6 +46,7 @@ export function App() {
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [agents, setAgents] = useState<AgentNode[]>([]);
   const [telemetry, setTelemetry] = useState<SystemTelemetry | null>(null);
+  const [landingScorecard, setLandingScorecard] = useState<any | null>(null);
 
   // Sync dark class on html root
   useEffect(() => {
@@ -140,6 +141,23 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Landing benchmark live fetch (Phase 4)
+  useEffect(() => {
+    if (currentView !== 'landing') return;
+    let cancelled = false;
+    async function fetchBenchmark() {
+      try {
+        const res = await fetch('/api/benchmark/scorecard');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.error && !cancelled) setLandingScorecard(data);
+      } catch {}
+    }
+    fetchBenchmark();
+    const id = setInterval(fetchBenchmark, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [currentView]);
+
   const [pendingPrompt, setPendingPrompt] = useState<string>('');
 
   const handleStartScan = () => {
@@ -233,16 +251,23 @@ export function App() {
                 <p className="mt-3 text-sm text-slate-600 dark:text-slate-300 max-w-3xl">
                   Reproducible, evidence-backed measurements of RakshakX Community Edition. Detailed results are published under Research / Benchmarks in the product console. The company site shows only a concise verified summary with a link to the full report. See <span className="font-mono text-xs bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">docs/BENCHMARK_V2_PROTOCOL.md</span>.
                 </p>
+                <div className="mt-1 flex items-center gap-2 text-[10px] font-mono">
+                  <span className={`w-1.5 h-1.5 rounded-full ${landingScorecard ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                  <span className={landingScorecard ? 'text-emerald-600' : 'text-amber-600'}>
+                    {landingScorecard ? `Live: ${landingScorecard.scan_id} • ${landingScorecard.target} • TP ${landingScorecard.tp} FP ${landingScorecard.fp} FN ${landingScorecard.fn}` : 'Offline: showing formula • live via /api/benchmark/scorecard'}
+                  </span>
+                </div>
                 <div className="mt-8 grid md:grid-cols-4 gap-4">
                   {[
-                    { k: 'Precision', v: 'TP/(TP+FP)' },
-                    { k: 'Recall', v: 'TP/(TP+FN)' },
-                    { k: 'F1', v: '2PR/(P+R)' },
-                    { k: 'Verification Rate', v: 'Confirmed/candidates' },
-                  ].map((c) => (
+                    { k: 'Precision', v: landingScorecard ? landingScorecard.precision.toFixed(3) : 'TP/(TP+FP)', sub: landingScorecard ? `TP ${landingScorecard.tp}` : 'Live when benchmark available' },
+                    { k: 'Recall', v: landingScorecard ? landingScorecard.recall.toFixed(3) : 'TP/(TP+FN)', sub: landingScorecard ? `FN ${landingScorecard.fn}` : 'Live when benchmark available' },
+                    { k: 'F1', v: landingScorecard ? landingScorecard.f1.toFixed(3) : '2PR/(P+R)', sub: landingScorecard ? `${landingScorecard.total_predictions} preds` : 'Live when benchmark available' },
+                    { k: 'Verification Rate', v: landingScorecard ? landingScorecard.verification_rate.toFixed(3) : 'Confirmed/candidates', sub: landingScorecard ? `${landingScorecard.verification_rate.toFixed(2)}` : 'Live when benchmark available' },
+                  ].map((c: any) => (
                     <div key={c.k} className="rounded-2xl border border-slate-200 dark:border-slate-800 p-5 bg-slate-50 dark:bg-[#121B2D]">
                       <div className="text-xs font-bold tracking-widest text-slate-500">{c.k}</div>
                       <div className="font-mono text-sm mt-1">{c.v}</div>
+                      <div className="text-[10px] text-slate-400 mt-1">{c.sub}</div>
                     </div>
                   ))}
                 </div>
