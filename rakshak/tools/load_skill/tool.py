@@ -57,10 +57,13 @@ async def load_skill(
 
     try:
         content = skill_file.read_text(encoding="utf-8")
+        # Playbooks are ~2KB (the Verification & Reporting tail with CWE/CVSS
+        # lives at the end) — truncate only past 8k chars so agents always
+        # see the full playbook including remediation guidance.
         truncated = content
-        if len(content) // 3 > 400:
+        if len(content) // 3 > 2600:
             truncated = (
-                content[: 400 * 3]
+                content[: 2600 * 3]
                 + "\n\n[... playbook truncated by RakshakX to save context tokens ...]\n"
             )
         return json.dumps({

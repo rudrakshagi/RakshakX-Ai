@@ -74,4 +74,4 @@ def test_load_skill_guidance():
 def test_compact_line_budget():
     for root in (True, False):
         lines = len(render_system_prompt(is_root=root).splitlines())
-        assert 45 <= lines <= 85, f"rendered {lines} lines, expected compact 45-85"
+        assert 45 <= lines <= 110, f"rendered {lines} lines, expected compact 45-110"

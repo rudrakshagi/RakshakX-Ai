@@ -120,4 +120,45 @@ async def create_vulnerability_report(
         "cvss_score": score,
         "severity": severity,
         "cvss_vector": vector,
+        # EXPAND ON HIT: one finding in a class means siblings nearby. Spawn
+        # ONE specialist (create_agent, narrow task + matching skill) for the
+        # follow-up below — cap 3 sibling probes, then move to the next class.
+        "follow_up": _follow_up_directive(category, affected_endpoint),
     })
+
+
+# Sibling-probe hints per finding category (generic fallback included).
+# Keys match on substrings of the category string, case-insensitive.
+_FOLLOW_UP_RULES: tuple[tuple[str, str], ...] = (
+    ("sql", "Same class nearby: time-based + error-based variants on this endpoint, other params on the same form/API, adjacent endpoints sharing the query. Skill: sql_injection."),
+    ("xss", "Same class nearby: other reflected params (?search, ?query, error pages), stored variants (comments/profile), DOM sinks on the same page. Skill: xss."),
+    ("idor", "Same class nearby: adjacent object IDs (123→124), other object types, different HTTP methods on the same endpoint. Skill: idor."),
+    ("jwt", "Same class nearby: alg-confusion on other auth endpoints, weak secrets, kid/jku variants, refresh-token flow. Skill: authentication_jwt."),
+    ("auth", "Same class nearby: rate-limit/brute-force posture, session fixation, logout/CSRF gaps on sibling flows. Skill: authentication_jwt."),
+    ("ssrf", "Same class nearby: other URL-fetching params, cloud-metadata variants, redirect-chain SSRF. Skill: ssrf."),
+    ("rce", "Same class nearby: adjacent injection points, wrapper/filter variants, out-of-band confirmation. Skill: rce."),
+    ("deserial", "Same class nearby: other serialized blobs/cookies, gadget variants. Skill: rce."),
+    ("race", "Same class nearby: sibling state-changing endpoints (coupon/balance/vote), single-packet burst. Skill: race_conditions."),
+    ("upload", "Same class nearby: other extensions (.phtml/.phar/.php5), magic-byte spoof, path control, SVG-XSS. Skill: file_upload."),
+    ("redirect", "Same class nearby: other redirect params, OAuth redirect_uri, subdomain-confusion variants. Skill: open_redirect_cors."),
+    ("cors", "Same class nearby: other authenticated endpoints reflecting Origin, null-origin, cache interaction. Skill: open_redirect_cors."),
+    ("ssti", "Same class nearby: other template-rendering inputs, traversal-to-RCE ladder. Skill: ssti."),
+    ("traversal", "Same class nearby: other file-ish params, wrapper variants, encoding bypasses. Skill: lfi_path_traversal."),
+    ("lfi", "Same class nearby: other file-ish params, wrapper variants, log-poisoning path. Skill: lfi_path_traversal."),
+    ("inclusion", "Same class nearby: other file-ish params, wrapper variants. Skill: lfi_path_traversal."),
+    ("xxe", "Same class nearby: other XML parsers/endpoints, out-of-band variants. Skill: lfi_path_traversal."),
+)
+
+
+def _follow_up_directive(category: str, endpoint: str | None) -> str:
+    """Build the expand-on-hit directive for a freshly filed finding."""
+    cat = (category or "").lower()
+    for marker, hint in _FOLLOW_UP_RULES:
+        if marker in cat:
+            tail = f" Start at {endpoint}." if endpoint else ""
+            return hint + tail
+    tail = f" Start at {endpoint}." if endpoint else ""
+    return (
+        "Same class nearby: enumerate sibling params/endpoints sharing this "
+        "code path and re-probe with variants before moving on." + tail
+    )
