@@ -157,10 +157,12 @@ def _configure_shell_tools(toolset: Any) -> None:
             data = json.loads(raw)
         except Exception:
             return await original(ctx, raw)
-        if isinstance(data, dict) and isinstance(data.get("shell"), bool):
-            logger.warning("Dropping boolean `shell` flag from exec_command args (model mistake)")
-            data.pop("shell", None)
-            raw = json.dumps(data)
+        if isinstance(data, dict):
+            sh = data.get("shell")
+            if isinstance(sh, bool) or (isinstance(sh, str) and sh.lower() in ("true", "false")):
+                logger.warning("Dropping boolean shell flag %r from exec_command args (model mistake)", sh)
+                data.pop("shell", None)
+                raw = json.dumps(data)
         return await original(ctx, raw)
 
     _invoke_coerced._rakshak_shell_coerced = True  # type: ignore[attr-defined]

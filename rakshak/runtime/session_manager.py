@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 from collections.abc import Callable
@@ -9,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docker.errors import APIError
 from docker.models.containers import Container
 
 from rakshak.config.settings import load_settings
@@ -19,8 +21,22 @@ from rakshak.runtime.sdk_session import SDKSandboxSession
 logger = logging.getLogger(__name__)
 
 StatusSink = Callable[[str], None]
-_CONTAINER_CAIDO_PORT = 48080
+# In-container ports: the intercept proxy (tool + http_proxy traffic) and the
+# UI/GraphQL API (bootstrap polling) are separate caido-cli listeners.
+_CONTAINER_CAIDO_PROXY_PORT = 48080
+_CONTAINER_CAIDO_API_PORT = 48082
 _SESSION_CACHE: dict[str, SandboxSessionBundle] = {}
+
+# docker APIError text markers for host-port bind collisions. _find_free_port
+# has a close-then-bind race (TOCTOU): another process can grab the port
+# before the container binds it, so create must retry with fresh ports.
+_PORT_CONFLICT_MARKERS = (
+    "port is already allocated",
+    "address already in use",
+    "failed to bind",
+    "bind for",
+)
+_CREATE_MAX_ATTEMPTS = 3
 
 
 def _find_free_port() -> int:
@@ -44,23 +60,32 @@ class SandboxSession:
         workdir: str = "/workspace",
         user: str = "pentester",
         environment: dict[str, str] | None = None,
+        timeout_s: float | None = None,
     ) -> tuple[int, str]:
         """Execute a shell command inside the sandbox."""
-        return self.docker_client.exec_command(
+        # exec_command blocks the calling thread (up to timeout_s) — same
+        # Phase-1 rule as sdk_session: never run it on the event loop.
+        return await asyncio.to_thread(
+            self.docker_client.exec_command,
             self.container,
             command,
             workdir=workdir,
             user=user,
             environment=environment,
+            timeout_s=timeout_s,
         )
 
     async def write(self, path: str | Path, content: str | bytes) -> None:
         """Write content to a file inside the sandbox."""
-        self.docker_client.write_file(self.container, str(path), content)
+        await asyncio.to_thread(
+            self.docker_client.write_file, self.container, str(path), content
+        )
 
     async def read(self, path: str | Path) -> str:
         """Read text from a file inside the sandbox."""
-        return self.docker_client.read_file(self.container, str(path))
+        return await asyncio.to_thread(
+            self.docker_client.read_file, self.container, str(path)
+        )
 
 
 @dataclass(slots=True)
@@ -72,6 +97,7 @@ class SandboxSessionBundle:
     container: Container
     caido_client: Any | None
     host_proxy_port: int | None
+    host_api_port: int | None = None
 
 
 async def create_or_reuse(
@@ -109,21 +135,52 @@ async def create_or_reuse(
                 "read_only": False,
             })
 
-    # Allocate host port for Caido proxy
-    host_port = _find_free_port() if settings.runtime.enable_caido else None
-    ports_map: dict[str, int | tuple[str, int]] = (
-        {f"{_CONTAINER_CAIDO_PORT}/tcp": host_port} if host_port else {}
-    )
-
+    # Allocate host ports for the Caido proxy AND the UI/GraphQL API
+    # (separate in-container listeners; bootstrap polls the API port).
     container_name = f"rakshak-{scan_id}"
-    report(f"Creating isolated sandbox container '{container_name}'...")
 
-    container = docker_client.create_sandbox(
-        image=resolved_image,
-        name=container_name,
-        bind_mounts=bind_mounts,
-        ports=ports_map,
-    )
+    # A leftover container with the same name (dead backend, killed scan)
+    # would make create fail with Conflict — clear it first. In-cache
+    # bundles returned above, so anything here is genuinely stale.
+    if docker_client.remove_container_by_name(container_name):
+        report(f"Removed stale container '{container_name}' from a previous run...")
+        logger.warning("Pre-create cleanup removed stale %s.", container_name)
+
+    container = None
+    for attempt in range(1, _CREATE_MAX_ATTEMPTS + 1):
+        host_proxy_port = _find_free_port() if settings.runtime.enable_caido else None
+        host_api_port = _find_free_port() if settings.runtime.enable_caido else None
+        ports_map: dict[str, int | tuple[str, int]] = {}
+        if host_proxy_port is not None and host_api_port is not None:
+            ports_map = {
+                f"{_CONTAINER_CAIDO_PROXY_PORT}/tcp": host_proxy_port,
+                f"{_CONTAINER_CAIDO_API_PORT}/tcp": host_api_port,
+            }
+
+        report(f"Creating isolated sandbox container '{container_name}'...")
+        try:
+            container = docker_client.create_sandbox(
+                image=resolved_image,
+                name=container_name,
+                bind_mounts=bind_mounts,
+                ports=ports_map,
+            )
+            break
+        except APIError as exc:
+            err_text = str(exc).lower()
+            is_port_conflict = any(m in err_text for m in _PORT_CONFLICT_MARKERS)
+            if is_port_conflict and attempt < _CREATE_MAX_ATTEMPTS:
+                logger.warning(
+                    "Host port collision creating %s (attempt %d/%d); re-picking ports...",
+                    container_name, attempt, _CREATE_MAX_ATTEMPTS,
+                )
+                continue
+            raise
+    if container is None:
+        raise RuntimeError(
+            f"Failed to create sandbox container {container_name!r} after "
+            f"{_CREATE_MAX_ATTEMPTS} attempts (persistent port collision)."
+        )
 
     session = SandboxSession(container=container, docker_client=docker_client)
 
@@ -139,12 +196,12 @@ async def create_or_reuse(
         if rel_path and content:
             await session.write(f"/workspace/{rel_path}", content)
 
-    # Bootstrap Caido proxy client if enabled
+    # Bootstrap Caido proxy client if enabled (via the UI/API port mapping)
     caido_client = None
-    if host_port is not None and settings.runtime.enable_caido:
+    if host_api_port is not None and settings.runtime.enable_caido:
         report("Bootstrapping Caido proxy sidecar...")
         try:
-            caido_client = await bootstrap_caido(host_port, project_name=scan_id)
+            caido_client = await bootstrap_caido(host_api_port, project_name=scan_id)
         except Exception:
             logger.warning("Could not bootstrap Caido client; proceeding with direct scanning.")
 
@@ -154,7 +211,8 @@ async def create_or_reuse(
         sdk_session=sdk_session,
         container=container,
         caido_client=caido_client,
-        host_proxy_port=host_port,
+        host_proxy_port=host_proxy_port,
+        host_api_port=host_api_port,
     )
     _SESSION_CACHE[scan_id] = bundle
     return bundle

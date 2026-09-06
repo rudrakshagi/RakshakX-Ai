@@ -28,6 +28,7 @@
 - [About RakshakX & Trinetra AI](#-about-rakshakx--trinetra-ai)
 - [Key Use Cases](#-key-use-cases)
 - [Core Architecture & Capabilities](#-core-architecture--capabilities)
+- [Platform Harness (Phases 1–6)](#6-platform-harness-phases-16-e2e-verified)
 - [Quickstart Guide (1-Command Launcher)](#-quickstart-guide)
 - [Configuring LLMs & AI Providers](#-configuring-llms--ai-providers)
 - [MCP Bridge (Antigravity & OpenCode Integration)](#-mcp-bridge-antigravity--opencode-integration)
@@ -118,6 +119,15 @@ Dynamic offensive playbooks loadable on-demand via `load_skill()`:
 ### 5. Output Spillway & Context Compaction
 - Massive tool outputs (50,000+ lines from Nmap / FFuF) are bounded and spilled to disk (`/workspace/.rakshak/spill/`), providing the LLM with a 100-line preview and file pointer.
 - Checkpoint engine compresses older conversational turns into dense `<conversation-checkpoint>` structures when context approaches 128k/200k token limits.
+
+### 6. Platform Harness (Phases 1–6, e2e-verified)
+Hardening across the full stack — every phase ships with unit tests, a real-Docker/real-service e2e, and a doc in `docs/`:
+- **P1 Heartbeat** (`docs/PHASE1_HEARTBEAT.md`): sandbox exec runs in a worker thread so the 3s liveness ticker never starves; the watchdog shows the live command (`executing_tool :: ffuf ...`), never a false `stuck_suspected`. E2E: max heartbeat gap 4.01s during a 60s blocking exec (was ~60s).
+- **P2 Runtime** (`docs/PHASE2_RUNTIME.md`): orphan-container reaper (fixed a prefix bug where it never matched), stale same-name takeover, port-collision retry, Caido login/project/connect retry with backoff — plus a final-e2e fix where proxy queries called a nonexistent SDK method (`client.graphql.query` is the real API).
+- **P3 Tools** (`docs/PHASE3_TOOLS.md`): spillway wired into exec (head+tail window to the model, full text to the spill file), per-scan writer isolation, model-friendly failure/timeout hooks on all 17 tools.
+- **P4 Observability** (`docs/PHASE4_OBSERVABILITY.md`): sidecar supervisor auto-heals bridge/UI (live kill-test proven), rotating backend logs, scan-scoped `/api/logs?scan=`, terminal agent marking on crash.
+- **P5 Reports+Benchmark** (`docs/PHASE5_REPORT_BENCHMARK.md`): central severity normalizer (creation funnel + SARIF/PDF/adapters/viewer), scorecard edge hardening (`"false"`-string, duplicate verdicts, negative time), freeze integrity verification gate.
+- **P6 Bridge** (`docs/PHASE6_BRIDGE.md`): single-home approval decisions with sticky denies, one-shot fallback-model retry on 429/5xx/model-blaming-400 (`RAKSHAK_FALLBACK_MODEL`).
 
 ---
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import logging
 import os
@@ -74,10 +75,25 @@ class DockerSandboxClient:
             environment=env,
             ports=ports or {},
             network_mode="bridge",
+            # NET_RAW lets nmap run SYN scans (-sS/-sV) and ICMP probes.
+            # Without it every nmap run fails with "Operation not permitted"
+            # while curl/sqlmap (plain TCP) still work — confusing for agents.
+            cap_add=["NET_RAW"],
         )
         container.start()
+        # Ensure file capabilities on nmap binary are stripped so execve does not fail with EPERM
+        try:
+            container.exec_run("setcap -r /usr/lib/nmap/nmap /usr/bin/nmap", user="root")
+        except Exception as exc:
+            logger.warning("Failed to strip nmap capabilities: %s", exc)
         logger.info("Started sandbox container %s (id=%s)", name, container.short_id)
         return container
+
+
+    # Default cap so one runaway tool (e.g. a 20-minute ffuf) can never eat
+    # a whole scan. GNU `timeout` (coreutils) kills the command and we keep
+    # whatever partial output was produced. Pass timeout_s=None/0 to disable.
+    DEFAULT_EXEC_TIMEOUT_S = 300.0
 
     def exec_command(
         self,
@@ -87,9 +103,14 @@ class DockerSandboxClient:
         workdir: str = "/workspace",
         user: str = "pentester",
         environment: dict[str, str] | None = None,
+        timeout_s: float | None = None,
     ) -> tuple[int, str]:
         """Execute a command in the container and return (exit_code, output_text)."""
+        if timeout_s is None:
+            timeout_s = self.DEFAULT_EXEC_TIMEOUT_S
         cmd_args = ["bash", "-c", cmd] if isinstance(cmd, str) else cmd
+        if timeout_s and timeout_s > 0:
+            cmd_args = ["timeout", str(timeout_s), *cmd_args]
 
         exec_res = container.exec_run(
             cmd=cmd_args,
@@ -101,6 +122,12 @@ class DockerSandboxClient:
             demux=False,
         )
         output = exec_res.output.decode("utf-8", errors="replace") if exec_res.output else ""
+        if exec_res.exit_code == 124 and timeout_s:
+            output += (
+                f"\n\n[RakshakX] Command timed out after {timeout_s:g}s and was killed — "
+                "output above is partial. Re-run narrower (smaller wordlist, "
+                "fewer threads/targets) instead of repeating the same command."
+            )
         return exec_res.exit_code, output
 
     def write_file(
@@ -147,3 +174,24 @@ class DockerSandboxClient:
             pass
         except Exception:
             logger.exception("Failed to clean up container %s", container_id_or_name)
+
+    def remove_container_by_name(self, name: str) -> bool:
+        """Remove a (possibly stale) container by exact name. True if one existed.
+
+        Used by the leak reaper and pre-create cleanup: a leftover
+        ``rakshak-<scan_id>`` container from a dead backend would otherwise
+        make the next ``create`` fail with a name Conflict.
+        """
+        try:
+            container = self._client.containers.get(name)
+        except NotFound:
+            return False
+        except Exception:
+            logger.warning("Could not inspect container %s for removal.", name)
+            return False
+        with contextlib.suppress(Exception):
+            container.stop(timeout=5)
+        with contextlib.suppress(Exception):
+            container.remove(force=True)
+        logger.info("Removed stale container %s.", name)
+        return True

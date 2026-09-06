@@ -24,10 +24,10 @@ async function testAgents() {
     console.log(`    Tool: ${agent.currentTool || 'N/A'} | Progress: ${agent.progress}%`);
   });
 
-  const hasRoot = body.data.some((a) => a.id === "root-orchestrator");
-  console.log(`\nIncludes Root Orchestrator: ${hasRoot ? "✅" : "❌"}`);
+  const isArray = Array.isArray(body.data);
+  console.log(`\nResponse Data is Array: ${isArray ? "✅" : "❌"}`);
 
-  if (res.ok && body.data.length > 0 && hasRoot) {
+  if (res.ok && isArray) {
     console.log("\n✅ PASS: Agents endpoint working correctly!\n");
   } else {
     console.error("\n❌ FAIL\n");

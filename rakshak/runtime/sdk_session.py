@@ -8,6 +8,8 @@ orchestration in `rakshak.runtime.session_manager`.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import io
 import logging
 from pathlib import Path
@@ -20,9 +22,19 @@ from agents.sandbox.snapshot import SnapshotBase
 from agents.sandbox.types import ExecResult, User
 from docker.models.containers import Container
 
+from rakshak.core.agents import current_heartbeat_scope
 from rakshak.runtime.docker_client import DockerSandboxClient
+from rakshak.tools.output_store import bound_and_store
 
 logger = logging.getLogger(__name__)
+
+# Model-facing budget for a single exec result (~4k chars, head+tail window).
+# Preserves the pre-Phase-3 "exceeded 4k chars" threshold: bounded output goes
+# to the model while the FULL text still spills to the sandbox spill file
+# (path referenced in the header) when a writer is bound, so nothing is lost.
+_EXEC_MAX_LINES = 100
+_EXEC_MAX_BYTES = 4_000
+_EXEC_MAX_TOKENS = 1_500
 
 
 class _NoopSnapshot(SnapshotBase):
@@ -66,7 +78,9 @@ class SDKSandboxSession(BaseSandboxSession):
 
     async def running(self) -> bool:
         try:
-            self._container.reload()
+            # container.reload() is blocking HTTP — never run it on the
+            # event loop or the heartbeat ticker starves.
+            await asyncio.to_thread(self._container.reload)
             return bool(self._container.status == "running")
         except Exception:
             logger.warning("Failed to inspect container status", exc_info=True)
@@ -83,18 +97,41 @@ class SDKSandboxSession(BaseSandboxSession):
         *command: str | Path,
         timeout: float | None = None,
     ) -> ExecResult:
-        _ = timeout
-        exit_code, merged = self._docker_client.exec_command(
+        # The SDK passes a timeout but it was previously ignored (`_ = timeout`),
+        # letting one tool hang a scan forever. Honor it, defaulting to the
+        # client cap (300s) when the SDK expresses no preference.
+        if timeout is None or timeout <= 0:
+            timeout = DockerSandboxClient.DEFAULT_EXEC_TIMEOUT_S
+        # Publish the command to the watchdog BEFORE blocking: the UI shows
+        # what the agent is executing, not just "executing_tool".
+        scope = current_heartbeat_scope()
+        if scope is not None:
+            coordinator, agent_id = scope
+            short_cmd = " ".join(" ".join(str(c) for c in command).split())[:120]
+            with contextlib.suppress(Exception):
+                await coordinator.touch_heartbeat(
+                    agent_id, phase="executing_tool", exec_detail=short_cmd
+                )
+        # container.exec_run() blocks the calling thread for the whole
+        # command duration (up to timeout_s). It MUST run in a worker thread:
+        # on the event loop it freezes the 3s heartbeat ticker and the UI
+        # watchdog falsely declares the agent stuck.
+        exit_code, merged = await asyncio.to_thread(
+            self._docker_client.exec_command,
             self._container,
             [str(c) for c in command],
             workdir=self._workspace_root,
+            timeout_s=timeout,
         )
-        MAX_OUTPUT_CHARS = 4_000
-        if len(merged) > MAX_OUTPUT_CHARS:
-            merged = (
-                merged[:MAX_OUTPUT_CHARS]
-                + "\n\n[output truncated by RakshakX: exceeded 4k chars]"
-            )
+        # Oversized output: head+tail window to the model, FULL text spilled
+        # to the sandbox spill file (path referenced in the header) so the
+        # agent can grep slices on demand. Nothing is silently lost.
+        merged = await bound_and_store(
+            merged,
+            max_lines=_EXEC_MAX_LINES,
+            max_bytes=_EXEC_MAX_BYTES,
+            max_tokens=_EXEC_MAX_TOKENS,
+        )
         stdout = merged.encode("utf-8", errors="replace")
         return ExecResult(stdout=stdout, stderr=b"", exit_code=exit_code)
 

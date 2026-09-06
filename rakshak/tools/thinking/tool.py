@@ -7,8 +7,14 @@ from typing import Annotated
 
 from agents import RunContextWrapper, function_tool
 
+from rakshak.tools.errors import model_failure_message, model_timeout_message
 
-@function_tool(timeout=10)
+
+@function_tool(
+    timeout=10,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def think(ctx: RunContextWrapper, thought: Annotated[str, "Private reasoning or hypothesis to record."]) -> str:
     """Record a private reasoning note or hypothesis without modifying scan state.
 

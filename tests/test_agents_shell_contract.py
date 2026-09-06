@@ -60,6 +60,16 @@ async def test_boolean_shell_flag_dropped() -> None:
     assert "shell" not in json.loads(seen[0])
 
 
+async def test_string_boolean_shell_flag_dropped() -> None:
+    toolset, seen = _stub_toolset()
+    _configure_shell_tools(toolset)
+    for val in ("true", "false", "True", "False"):
+        seen.clear()
+        await _invoke(toolset, json.dumps({"cmd": "ls", "shell": val}))
+        assert len(seen) == 1
+        assert "shell" not in json.loads(seen[0])
+
+
 async def test_string_shell_preserved() -> None:
     toolset, seen = _stub_toolset()
     _configure_shell_tools(toolset)

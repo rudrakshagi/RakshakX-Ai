@@ -54,16 +54,28 @@ def _build_model_settings(settings: Any) -> ModelSettings:
 def _is_allowed_scope(target: str, scope: str) -> bool:
     """Authorization & Safety: scope must be a self-hosted lab target (RFC1918, localhost, or lab domain)."""
     import ipaddress
+    import os
     from urllib.parse import urlparse
 
     raw = (scope or target).strip()
     if not raw:
         return False
+    # Operator-owned domains: comma-separated, e.g.
+    # RAKSHAK_ALLOWED_SCOPES="rudrakshai.in,example.com". Only add domains
+    # you own or are explicitly authorized to test.
+    owned = [s.strip().lower() for s in os.getenv("RAKSHAK_ALLOWED_SCOPES", "").split(",") if s.strip()]
     # Allow explicit lab allowlist via substrings
     allow_substrings = ["localhost", "127.0.0.1", "10.", "192.168.", "172.", "lab", "juice", "dvwa", "metasploitable"]
     low = raw.lower()
     if any(tok in low for tok in allow_substrings):
         return True
+    try:
+        parsed = urlparse(raw if "://" in raw else f"http://{raw}")
+        host = (parsed.hostname or raw.split("/")[0].split(":")[0]).lower()
+        if owned and any(host == o or host.endswith(f".{o}") for o in owned):
+            return True
+    except Exception:
+        pass
     try:
         parsed = urlparse(raw if "://" in raw else f"http://{raw}")
         host = parsed.hostname or raw.split("/")[0].split(":")[0]
@@ -161,6 +173,10 @@ async def run_rakshak_scan(
                 session=bundle.sdk_session,
             ),
             tool_not_found_behavior="return_error_to_model",
+            # We run against OpenRouter/OpenCode Zen, not OpenAI — the SDK's
+            # trace exporter 401s every turn ("[non-fatal] Tracing client
+            # error 401" log spam). Tracing is observability-only; disable it.
+            tracing_disabled=True,
         )
 
         hooks = ReportUsageHooks(
@@ -217,6 +233,9 @@ async def run_rakshak_scan(
             "agent_id": root_id,
             "parent_id": None,
             "spawn_child_agent": spawn_child,
+            "state_dir": state_dir,
+            "runtime_state_dir": state_dir,
+            "agents_db_path": agents_db,
         }
 
         root_session = open_agent_session(root_id, agents_db)
@@ -253,6 +272,12 @@ async def run_rakshak_scan(
     finally:
         configure_spill_writer(None)
         await coordinator.cancel_descendants(root_id)
+        # Mark any still-"running"/"waiting" agents terminal so agents.json (and
+        # the 5s watchdog) never reports a finished scan as running/stuck.
+        with contextlib.suppress(Exception):
+            for aid, st in list(coordinator.statuses.items()):
+                if st in ("running", "waiting"):
+                    await coordinator.set_status(aid, "completed")
         for s in sessions_to_close:
             with contextlib.suppress(Exception):
                 s.close()
@@ -313,6 +338,13 @@ async def run_rakshak_scan(
 
             with contextlib.suppress(Exception):
                 meta_path.write_text(_json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+
+            # Guaranteed final report: the console's Reports tab expects
+            # vulnerabilities.json / sarif.json / report.md to exist even
+            # when the agent recorded zero findings (previously no files
+            # were written at all, showing "No active scan report yet").
+            with contextlib.suppress(Exception):
+                report_state.persist()
 
             # Environment freeze artifact
             try:

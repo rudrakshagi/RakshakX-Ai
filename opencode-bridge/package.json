@@ -9,7 +9,8 @@
     "dev": "node --watch server.js",
     "test:models": "node scripts/test-models.js",
     "test:chat": "node scripts/test-chat.js",
-    "test:stream": "node scripts/test-stream.js"
+    "test:stream": "node scripts/test-stream.js",
+    "test:eval": "node scripts/eval-test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

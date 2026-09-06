@@ -3,78 +3,7 @@ import { Router } from "express";
 
 class AgentManager {
   constructor() {
-    this.agents = new Map([
-      [
-        "root-orchestrator",
-        {
-          id: "root-orchestrator",
-          name: "Root Orchestrator",
-          type: "Root Agent",
-          status: "running",
-          action: "Orchestrating security audit & delegating specialist tasks",
-          currentTool: "create_agent",
-          progress: 75,
-          logs: ["Analyzing prompt requirements", "Spawning specialist subagents", "Awaiting subagent reports"],
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-      [
-        "recon-specialist",
-        {
-          id: "recon-specialist",
-          name: "Reconnaissance Subagent",
-          type: "Specialist Subagent",
-          status: "executing_tool",
-          action: "Scanning active services and mapping web application attack surface",
-          currentTool: "nmap_service_scan",
-          progress: 85,
-          logs: ["Port 80/tcp OPEN (HTTP)", "Port 443/tcp OPEN (HTTPS)", "Header inspection completed"],
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-      [
-        "sqli-specialist",
-        {
-          id: "sqli-specialist",
-          name: "SQL Injection Specialist",
-          type: "Specialist Subagent",
-          status: "thinking",
-          action: "Testing parameters for boolean-based blind SQL injection",
-          currentTool: "sql_payload_injector",
-          progress: 60,
-          logs: ["Testing GET param 'id'", "Analyzing response time delta", "Payload verified"],
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-      [
-        "jwt-auth-agent",
-        {
-          id: "jwt-auth-agent",
-          name: "JWT Auth Specialist",
-          type: "Specialist Subagent",
-          status: "running",
-          action: "Auditing JWT header algorithms (none-alg, HS256 key confusion)",
-          currentTool: "jwt_token_fuzzer",
-          progress: 90,
-          logs: ["Captured Bearer token", "Testing 'none' algorithm bypass", "Testing weak HMAC secret"],
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-      [
-        "report-synthesizer",
-        {
-          id: "report-synthesizer",
-          name: "Report Synthesizer Subagent",
-          type: "Synthesis Agent",
-          status: "waiting",
-          action: "Awaiting final vulnerability findings to construct executive summary",
-          currentTool: "agent_finish",
-          progress: 40,
-          logs: ["Initialized report structure", "Listening on subagent mailbox"],
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-    ]);
+    this.agents = new Map();
   }
 
   getAgents() {
@@ -83,57 +12,168 @@ class AgentManager {
 
   updateAgent(id, updates) {
     const existing = this.agents.get(id);
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const logs = existing ? [...(existing.logs || [])] : [];
+    if (updates.action) {
+      const logEntry = `[${timestamp}] ${updates.action}`;
+      if (logs[logs.length - 1] !== logEntry) {
+        logs.push(logEntry);
+        if (logs.length > 10) logs.shift();
+      }
+    }
+    if (updates.currentTool) {
+      const toolLog = `[${timestamp}] Executing tool: ${updates.currentTool}`;
+      if (logs[logs.length - 1] !== toolLog) {
+        logs.push(toolLog);
+        if (logs.length > 10) logs.shift();
+      }
+    }
+
     if (existing) {
       this.agents.set(id, {
         ...existing,
         ...updates,
+        logs: updates.logs || logs,
+        updatedAt: new Date().toISOString(),
+      });
+    } else {
+      this.agents.set(id, {
+        id,
+        name: updates.name || id,
+        type: updates.type || "Specialist Subagent",
+        status: updates.status || "running",
+        action: updates.action || "Executing security analysis",
+        currentTool: updates.currentTool,
+        progress: updates.progress || 10,
+        logs: updates.logs || logs,
         updatedAt: new Date().toISOString(),
       });
     }
   }
 
   triggerActivity(promptText) {
-    const text = (promptText || "").toLowerCase();
-    
-    if (text.includes("sql") || text.includes("inject")) {
-      this.updateAgent("sqli-specialist", {
-        status: "executing_tool",
-        action: `Executing SQL injection audit for query: "${promptText.slice(0, 30)}..."`,
-        progress: Math.min(95, (this.agents.get("sqli-specialist").progress + 15) % 100),
-      });
-    } else if (text.includes("jwt") || text.includes("token") || text.includes("auth")) {
-      this.updateAgent("jwt-auth-agent", {
-        status: "executing_tool",
-        action: `Analyzing JWT token security for query: "${promptText.slice(0, 30)}..."`,
-        progress: Math.min(95, (this.agents.get("jwt-auth-agent").progress + 20) % 100),
-      });
-    } else {
-      this.getAgents().forEach(agent => {
-        const nextProgress = Math.min(100, agent.progress + Math.floor(Math.random() * 10) + 5);
-        this.updateAgent(agent.id, {
-          progress: nextProgress >= 100 ? 100 : nextProgress,
-          status: nextProgress >= 100 ? "completed" : (nextProgress % 2 === 0 ? "executing_tool" : "thinking"),
-        });
-      });
-    }
+    // No-op: fake agents are disabled. Only real spawned agents via /v1/agents/spawn or backend scans are tracked.
+  }
+
+  fallbackAgents() {
+    return this.getAgents();
   }
 }
 
 export const agentManager = new AgentManager();
 
-export function buildAgentsRouter() {
+/**
+ * Real proxy over the RakshakX viewer backend. Falls back to mock data
+ * only when the backend fetch fails (marked source:'fallback').
+ * @param {object} [opts]
+ * @param {string} [opts.backendBase]
+ * @param {typeof fetch} [opts.fetchImpl]
+ */
+export function buildAgentsRouter(opts = {}) {
   const router = Router();
+  const backendBase = (opts.backendBase ?? process.env.RAKSHAK_BACKEND ?? "http://127.0.0.1:8080").replace(/\/$/, "");
+  const fetchImpl = opts.fetchImpl ?? fetch;
 
-  // GET /v1/agents -> List all active agents & status cards data
-  router.get("/v1/agents", (req, res) => {
-    res.json({
-      object: "list",
-      data: agentManager.getAgents(),
-      count: agentManager.agents.size,
+  async function backendFetch(path, init) {
+    const res = await fetchImpl(`${backendBase}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
+    const text = await res.text();
+    if (!res.ok) {
+      const err = new Error(`backend ${res.status}: ${text.slice(0, 500)}`);
+      err.status = res.status;
+      throw err;
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { raw: text };
+    }
+  }
+
+  // GET /v1/agents -> live backend /api/agents, fallback to local agents on failure
+  router.get("/v1/agents", async (req, res) => {
+    try {
+      const data = await backendFetch("/api/agents");
+      let list = [];
+      if (Array.isArray(data)) {
+        list = data;
+      } else if (data && typeof data === "object" && data.names) {
+        const names = data.names || {};
+        const statuses = data.statuses || {};
+        const meta = data.metadata || {};
+        list = Object.keys(names).map((aid) => ({
+          id: aid,
+          name: names[aid] || aid,
+          type: aid === "root_01" || aid === "agent-root" || aid.includes("root") ? "Root Orchestrator" : "Specialist Subagent",
+          status: (statuses[aid] || "completed").toLowerCase(),
+          action: meta[aid]?.task || meta[aid]?.action || "Executing security task",
+          currentTool: meta[aid]?.current_tool,
+          progress: meta[aid]?.progress ?? (statuses[aid] === "completed" ? 100 : 75),
+          logs: meta[aid]?.logs || [],
+        }));
+      } else if (Array.isArray(data?.data)) {
+        list = data.data;
+      }
+      res.json({ object: "list", data: list, count: list.length, source: "live" });
+    } catch (err) {
+      console.warn(`[GET /v1/agents] backend unreachable (${err.message}); serving fallback`);
+      const fallbackList = agentManager.fallbackAgents();
+      res.json({ object: "list", data: fallbackList, count: fallbackList.length, source: "fallback" });
+    }
   });
 
-  // POST /v1/agents/trigger -> Trigger simulated agent updates
+  // POST /v1/agents/spawn {name,task,target,mode} -> POST backend /api/scan
+  router.post("/v1/agents/spawn", async (req, res) => {
+    const { name, task, target, mode } = req.body ?? {};
+    if (!task) {
+      return res.status(400).json({ error: { message: "`task` is required", type: "invalid_request" } });
+    }
+    const agentId = `agent-${Date.now().toString(36)}`;
+    agentManager.updateAgent(agentId, {
+      name: name || "Autonomous Security Agent",
+      type: "Specialist Subagent",
+      status: "running",
+      action: task,
+      currentTool: "initializing",
+      progress: 15,
+    });
+    try {
+      const data = await backendFetch("/api/scan", {
+        method: "POST",
+        body: JSON.stringify({
+          target: target ?? "example.com",
+          mode: mode ?? "blackbox",
+          prompt: `spawn:${name ? `[${name}] ` : ""}${task}`,
+        }),
+      });
+      res.json({ ok: true, source: "live", data, agentId });
+    } catch (err) {
+      console.warn("[POST /v1/agents/spawn] backend unreachable, saved to local agent state");
+      res.json({ ok: true, source: "local", agentId });
+    }
+  });
+
+  // POST /v1/agents/message {target_agent_id|instruction} -> POST /api/steer
+  router.post("/v1/agents/message", async (req, res) => {
+    const { instruction, target_agent_id } = req.body ?? {};
+    if (!instruction) {
+      return res.status(400).json({ error: { message: "`instruction` is required", type: "invalid_request" } });
+    }
+    try {
+      const data = await backendFetch("/api/steer", {
+        method: "POST",
+        body: JSON.stringify({ instruction, target_agent_id }),
+      });
+      res.json({ ok: true, source: "live", data });
+    } catch (err) {
+      console.error("[POST /v1/agents/message]", err);
+      res.status(502).json({ error: { message: err.message, type: "upstream_error" } });
+    }
+  });
+
+  // POST /v1/agents/trigger -> kept for compat (simulated local updates)
   router.post("/v1/agents/trigger", (req, res) => {
     const { prompt } = req.body || {};
     agentManager.triggerActivity(prompt || "sample execution");
@@ -144,4 +184,3 @@ export function buildAgentsRouter() {
 }
 
 export default buildAgentsRouter;
-

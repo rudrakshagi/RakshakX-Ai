@@ -7,7 +7,9 @@ import contextlib
 import json
 import logging
 import tempfile
+import time
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -31,6 +33,36 @@ Status = Literal[
 ]
 
 WaitKind = Literal["user", "agents", "stalled"]
+
+# Minimum seconds between disk snapshots triggered by heartbeats, per agent.
+# The 5-second UI watchdog reads agents.json, so heartbeats must flush at
+# least that often when an agent is actively turning — but never on every
+# call, to avoid disk churn on fast loops.
+_HEARTBEAT_SNAPSHOT_INTERVAL_S = 5.0
+
+# Ambient (coordinator, agent_id) scope for the currently-turning agent.
+# The execution loop binds this around each Runner.run so deep code paths
+# with no agent context of their own (e.g. sandbox exec) can still
+# attribute heartbeats to the right agent. ContextVar => correct per-task
+# attribution even when root + specialists turn concurrently.
+_current_heartbeat_scope: ContextVar[tuple["AgentCoordinator", str] | None] = (
+    ContextVar("rakshak_heartbeat_scope", default=None)
+)
+
+
+@contextlib.asynccontextmanager
+async def heartbeat_scope(coordinator: "AgentCoordinator", agent_id: str):
+    """Bind (coordinator, agent_id) as the ambient heartbeat scope for this task."""
+    token = _current_heartbeat_scope.set((coordinator, agent_id))
+    try:
+        yield
+    finally:
+        _current_heartbeat_scope.reset(token)
+
+
+def current_heartbeat_scope() -> tuple["AgentCoordinator", str] | None:
+    """Return the ambient heartbeat scope, or None outside an agent turn."""
+    return _current_heartbeat_scope.get()
 
 
 @dataclass(slots=True)
@@ -63,6 +95,10 @@ class AgentCoordinator:
         self._lock = asyncio.Lock()
         self._snapshot_path: Path | None = None
         self.is_shutting_down = False
+        # Last wall-clock time a heartbeat snapshot was flushed per agent.
+        # Heartbeats update in-memory metadata every call but only hit disk
+        # at most once per _HEARTBEAT_SNAPSHOT_INTERVAL_S per agent.
+        self._last_hb_snapshot: dict[str, float] = {}
         self._budget_stopped = False
         self._reserve_stopped = False
         self._budget_paused = False
@@ -146,6 +182,69 @@ class AgentCoordinator:
                 self.runtimes.setdefault(agent_id, AgentRuntime()).user_wake_required = False
                 self._parent_notified.discard(agent_id)
         await self._maybe_snapshot()
+
+    async def touch_heartbeat(
+        self,
+        agent_id: str,
+        *,
+        phase: str = "loop",
+        turns_taken: int = 0,
+        consecutive_errors: int = 0,
+        exec_detail: str | None = None,
+    ) -> None:
+        """Record a liveness heartbeat for an agent turn-loop iteration.
+
+        Updates in-memory ``metadata[agent_id]`` with ``last_heartbeat``
+        (epoch seconds), ``phase``, ``turns`` and ``consecutive_errors`` so the
+        5-second UI watchdog can tell running / stuck / stopped apart. Flushes
+        ``agents.json`` at most once per ``_HEARTBEAT_SNAPSHOT_INTERVAL_S`` per
+        agent. Never raises — failures are logged and swallowed so the agent
+        loop can never break because of observability.
+
+        ``exec_detail`` carries the currently-executing sandbox command for
+        the watchdog UI: a non-None value sets/overwrites ``meta["exec"]``,
+        ``""`` clears it (turn finished), and None (default) leaves it
+        untouched so the 3s background ticker never wipes the display.
+        """
+        try:
+            now = time.time()
+            async with self._lock:
+                if agent_id not in self.statuses:
+                    return
+                meta = self.metadata.setdefault(agent_id, {})
+                meta["last_heartbeat"] = now
+                meta["phase"] = phase
+                meta["turns"] = turns_taken
+                meta["consecutive_errors"] = consecutive_errors
+                if exec_detail is not None:
+                    if exec_detail:
+                        meta["exec"] = exec_detail
+                    else:
+                        meta.pop("exec", None)
+                last_flush = self._last_hb_snapshot.get(agent_id, 0.0)
+                should_flush = (now - last_flush) >= _HEARTBEAT_SNAPSHOT_INTERVAL_S
+                if should_flush:
+                    self._last_hb_snapshot[agent_id] = now
+            if should_flush:
+                await self._maybe_snapshot()
+        except Exception:
+            logger.debug("Heartbeat failed for agent %s; continuing.", agent_id, exc_info=True)
+
+    async def heartbeat(
+        self,
+        agent_id: str,
+        *,
+        phase: str = "running",
+        turns_taken: int = 0,
+        consecutive_errors: int = 0,
+    ) -> None:
+        """Record an explicit agent liveness heartbeat tick."""
+        await self.touch_heartbeat(
+            agent_id,
+            phase=phase,
+            turns_taken=turns_taken,
+            consecutive_errors=consecutive_errors,
+        )
 
     async def park_waiting(self, agent_id: str, *, wait_kind: WaitKind) -> None:
         """Park an agent turn while waiting for child completion or user response."""

@@ -10,13 +10,15 @@ import {
   Settings,
   ArrowLeft,
   Key,
-  Bot
+  Bot,
+  Terminal,
 } from 'lucide-react';
 import { ThemeToggle } from '../common/ThemeToggle';
 import { Logo } from '../common/Logo';
 import { SocialFooterStrip } from '../common/SocialFooterStrip';
+import { GlobalWatchdogBar } from './GlobalWatchdogBar';
 
-export type AppTab = 'overview' | 'new-scan' | 'findings' | 'agents' | 'playbooks' | 'reports' | 'benchmarks' | 'settings' | 'ai-chat';
+export type AppTab = 'overview' | 'new-scan' | 'findings' | 'agents' | 'playbooks' | 'reports' | 'benchmarks' | 'settings' | 'ai-chat' | 'logs';
 
 interface AppLayoutProps {
   currentTab: AppTab;
@@ -43,6 +45,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     { id: 'findings', label: 'Findings Ledger', icon: Bug, count: verifiedFindingsCount },
     { id: 'agents', label: 'Agent Topology', icon: Network },
     { id: 'ai-chat', label: 'AI Security Chat', icon: Bot },
+    { id: 'logs', label: 'Live System Logs', icon: Terminal },
     { id: 'playbooks', label: 'Playbooks & Skills', icon: BookOpen },
     { id: 'reports', label: 'Compliance Reports', icon: FileCheck },
     { id: 'benchmarks', label: 'Research / Benchmarks', icon: FileCheck },
@@ -141,8 +144,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           </div>
         </header>
 
+        {/* Global stuck/idle watchdog — visible on every tab */}
+        <GlobalWatchdogBar />
+
         {/* Tab Content View */}
-        <main className={`flex-1 p-6 md:p-8 flex flex-col justify-between ${
+        <main className={`flex-1 ${
+          currentTab === 'ai-chat' ? 'p-2.5 md:p-3.5' : 'p-6 md:p-8'
+        } flex flex-col justify-between ${
           currentTab === 'ai-chat' ? 'overflow-hidden' : 'overflow-y-auto'
         }`}>
           <div className={currentTab === 'ai-chat' ? 'flex-1 flex flex-col min-h-0' : ''}>

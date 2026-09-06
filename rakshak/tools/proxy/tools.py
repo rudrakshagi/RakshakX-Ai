@@ -9,6 +9,7 @@ from typing import Annotated, Any
 
 from agents import RunContextWrapper, function_tool
 
+from rakshak.tools.errors import model_failure_message, model_timeout_message
 from rakshak.tools.proxy import caido_api
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,11 @@ def _get_client(ctx: RunContextWrapper) -> Any | None:
     return inner.get("caido_client")
 
 
-@function_tool(timeout=60)
+@function_tool(
+    timeout=60,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def list_requests(
     ctx: RunContextWrapper,
     httpql_filter: Annotated[str | None, "HTTPQL filter to query requests (e.g. resp.code.gte:400). Empty for all."] = None,
@@ -48,7 +53,11 @@ async def list_requests(
     return json.dumps({"success": True, "data": res}, ensure_ascii=False)
 
 
-@function_tool(timeout=60)
+@function_tool(
+    timeout=60,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def view_request(
     ctx: RunContextWrapper,
     request_id: Annotated[str, "ID of the captured request to inspect (from list_requests)."],

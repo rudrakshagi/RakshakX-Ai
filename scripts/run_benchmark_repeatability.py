@@ -14,7 +14,7 @@ from pathlib import Path
 from rakshak.benchmark.adapters import evaluate_live_scan, load_ground_truth
 from rakshak.benchmark.metrics import BenchmarkPrediction, evaluate_benchmark
 from rakshak.benchmark.prompts import INTEGRITY_STATEMENT, T01_PROMPT
-from rakshak.benchmark.runner import freeze_environment
+from rakshak.benchmark.runner import freeze_environment, verify_environment_freeze
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,6 +78,12 @@ def main() -> int:
     )
     freeze.persist(args.output_dir / "environment_freeze.json")
     print(f" Freeze hash: {freeze.compute_integrity_hash()[:16]}...")
+    # Close the loop: prove the persisted freeze file round-trips byte-identical.
+    freeze_ok, freeze_detail = verify_environment_freeze(args.output_dir / "environment_freeze.json")
+    print(f" Freeze verify: {'VERIFIED' if freeze_ok else 'TAMPERED'} ({freeze_detail})")
+    if not freeze_ok:
+        print("ERROR: environment freeze failed integrity check; aborting.")
+        return 1
 
     # Collect per-run scorecards
     per_run: list[dict] = []
@@ -86,7 +92,18 @@ def main() -> int:
         # Offline aggregation: score existing vulns files
         vuln_files = sorted(args.vulns_dir.glob("*/vulnerabilities.json")) + sorted(args.vulns_dir.glob("vulnerabilities_*.json"))
         if not vuln_files:
-            vuln_files = sorted(args.vulns_dir.glob("*.json"))
+            # Last-resort *.json fallback, but NEVER score known non-finding
+            # artifacts (a previous run silently scored environment_freeze.json
+            # as TP=0/FN=12 and presented it as a real result).
+            _NON_VULN_NAMES = {
+                "environment_freeze.json", "run_meta.json", "scorecard.json",
+                "sarif.json", "repeatability_summary.json", "agents.json",
+                "notes.json", "todos.json", "steer_queue.json", "report.json",
+            }
+            vuln_files = sorted(
+                p for p in args.vulns_dir.glob("*.json")
+                if p.name not in _NON_VULN_NAMES
+            )
         for i, vf in enumerate(vuln_files[: args.runs]):
             try:
                 vulns = json.loads(vf.read_text(encoding="utf-8"))

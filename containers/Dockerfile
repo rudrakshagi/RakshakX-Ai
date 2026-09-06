@@ -68,8 +68,13 @@ RUN apt-get update && \
     libnss3-tools \
     chromium fonts-liberation
 
-# Allow nmap raw socket capture without root
-RUN setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip $(which nmap)
+# Kali's nmap package ships file capabilities on /usr/lib/nmap/nmap, and those
+# make execve() fail with EPERM ("Operation not permitted") inside our
+# containers — for every user including root. Strip them: raw scans run via
+# passwordless sudo instead, and the runtime adds NET_RAW with cap_add at
+# container creation (see DockerSandboxClient.create_sandbox).
+RUN setcap -r /usr/lib/nmap/nmap && \
+    getcap /usr/lib/nmap/nmap "$(which nmap)" || true
 
 # Generate private Root CA for transparent HTTPS interception
 USER pentester

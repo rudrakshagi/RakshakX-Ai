@@ -64,6 +64,7 @@ def test_create_sandbox_volumes_ports_env():
     assert kwargs["name"] == "rakshak-test"
     assert kwargs["ports"] == {"48080/tcp": 12345}
     assert "/tmp/src" in kwargs["volumes"]
+    assert "NET_RAW" in kwargs["cap_add"]
     container.start.assert_called_once()
 
 
@@ -80,6 +81,40 @@ def test_exec_command_runs_bash():
     code, out = manager.exec_command(container, "echo hi")
     assert code == 0
     assert "hello" in out
+
+
+def test_exec_command_wraps_timeout_by_default():
+    container = MagicMock()
+    container.exec_run.return_value = MagicMock(exit_code=0, output=b"ok")
+    manager = DockerSandboxClient.__new__(DockerSandboxClient)
+    manager._client = MagicMock()
+
+    manager.exec_command(container, "sleep 5")
+    cmd = container.exec_run.call_args.kwargs["cmd"]
+    assert cmd[:3] == ["timeout", "300.0", "bash"]
+
+
+def test_exec_command_timeout_exit_appends_note():
+    container = MagicMock()
+    container.exec_run.return_value = MagicMock(exit_code=124, output=b"partial")
+    manager = DockerSandboxClient.__new__(DockerSandboxClient)
+    manager._client = MagicMock()
+
+    code, out = manager.exec_command(container, "sleep 9999")
+    assert code == 124
+    assert "partial" in out
+    assert "timed out" in out
+
+
+def test_exec_command_timeout_disabled_with_zero():
+    container = MagicMock()
+    container.exec_run.return_value = MagicMock(exit_code=0, output=b"ok")
+    manager = DockerSandboxClient.__new__(DockerSandboxClient)
+    manager._client = MagicMock()
+
+    manager.exec_command(container, ["echo", "hi"], timeout_s=0)
+    cmd = container.exec_run.call_args.kwargs["cmd"]
+    assert cmd == ["echo", "hi"]
 
 
 def test_write_file_mkdir_parent(tmp_path):

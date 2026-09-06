@@ -331,6 +331,34 @@ class RakshakEnvironmentFreeze:
         return integrity_hash
 
 
+def verify_environment_freeze(path: Path) -> tuple[bool, str]:
+    """Recompute a stored freeze file's integrity hash and compare.
+
+    Returns (ok, detail): ok=True means the file is byte-consistent with
+    what :meth:`RakshakEnvironmentFreeze.persist` wrote (no tampering, no
+    truncation, no hand-edits). Any structural problem returns ok=False
+    with a reason — never raises, so scripts can report instead of crash.
+    """
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, f"unreadable freeze file: {exc}"
+    if not isinstance(data, dict):
+        return False, "freeze file is not a JSON object"
+    stored = data.pop("integrity_hash", None)
+    if not stored:
+        return False, "missing integrity_hash field"
+    try:
+        recomputed = hashlib.sha256(
+            json.dumps(data, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+    except Exception as exc:
+        return False, f"hash recomputation failed: {exc}"
+    if recomputed == stored:
+        return True, f"integrity_hash verified ({stored[:16]}...)"
+    return False, f"hash mismatch: stored {str(stored)[:16]}... vs recomputed {recomputed[:16]}..."
+
+
 def _get_git_info() -> tuple[str, str]:
     commit = _run_cmd(["git", "rev-parse", "--short", "HEAD"])
     branch = _run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])

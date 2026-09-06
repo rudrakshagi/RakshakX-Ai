@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 
 logger = logging.getLogger(__name__)
 
@@ -15,16 +16,37 @@ WORKSPACE_SPILL_DIR = "/workspace/.rakshak/spill"
 SpillWriter = Callable[[str, str], Awaitable[str | None]]
 _spill_writer: SpillWriter | None = None
 
+# Ambient per-scan writer. The module-global above is a fallback for tools
+# invoked outside a scan context; concurrent scans in one process must NOT
+# share a writer (last-writer-wins would spill scan A's output into scan B's
+# sandbox), so the runner binds the ambient writer per scan and tools prefer it.
+_active_spill_writer: ContextVar[SpillWriter | None] = ContextVar(
+    "rakshak_spill_writer", default=None
+)
+
 
 def configure_spill_writer(writer: SpillWriter | None) -> None:
-    """Register or clear the active sandbox file spill writer."""
+    """Register or clear the active sandbox file spill writer (ambient + fallback)."""
     global _spill_writer  # noqa: PLW0603
     _spill_writer = writer
+    _active_spill_writer.set(writer)
+
+
+def _resolve_spill_writer() -> SpillWriter | None:
+    return _active_spill_writer.get() or _spill_writer
 
 
 def _estimate_chars(text: str) -> int:
     """Rough char-based token estimate (1 token ~= 3 chars for mixed code/text)."""
     return len(text) // 3
+
+
+def _head_tail_split(text: str, budget: int) -> tuple[str, str]:
+    """Split text into (head, tail) halves of ~budget/2 chars each."""
+    if len(text) <= budget:
+        return text, ""
+    half = budget // 2
+    return text[:half], text[-half:]
 
 
 def bound_text(
@@ -34,42 +56,61 @@ def bound_text(
     max_bytes: int = 100_000,
     max_tokens: int = 12_000,
 ) -> str:
-    """Truncate text exceeding line, byte, or token ceilings with a clean marker."""
+    """Bound oversized text with a head+tail window and a clean omission marker.
+
+    Unlike head-only truncation, the TAIL (exit codes, error summaries,
+    "found N items" footers) survives — that is where scan tools report
+    their verdict. The middle is cut with exact omitted counts.
+    """
     if not text:
         return text
 
     encoded = text.encode("utf-8")
-    is_byte_capped = len(encoded) > max_bytes
-    is_token_capped = _estimate_chars(text) > max_tokens
     lines = text.splitlines(keepends=True)
-    is_line_capped = len(lines) > max_lines
-
-    if not is_byte_capped and not is_line_capped and not is_token_capped:
+    total_lines = len(lines)
+    total_bytes = len(encoded)
+    capped = (
+        total_bytes > max_bytes
+        or total_lines > max_lines
+        or _estimate_chars(text) > max_tokens
+    )
+    if not capped:
         return text
 
-    # Truncate by lines first
-    kept_lines = lines[:max_lines]
-    truncated_str = "".join(kept_lines)
+    # Line window: first half + last half of max_lines.
+    head_n = max_lines // 2
+    tail_n = max_lines - head_n
+    if total_lines > max_lines:
+        head, tail = lines[:head_n], lines[-tail_n:]
+    else:
+        head, tail = lines, []
 
-    # Check byte cap on the remaining string
-    if len(truncated_str.encode("utf-8")) > max_bytes:
-        truncated_bytes = truncated_str.encode("utf-8")[:max_bytes]
-        truncated_str = truncated_bytes.decode("utf-8", errors="ignore")
+    kept = "".join(head) + "".join(tail)
 
-    # Check token cap on the remaining string
-    if _estimate_chars(truncated_str) > max_tokens:
-        truncated_chars = max_tokens * 3
-        truncated_str = truncated_str[:truncated_chars]
+    # Byte window on the kept text (decode-safe slices).
+    kept_bytes = kept.encode("utf-8")
+    if len(kept_bytes) > max_bytes:
+        half = max_bytes // 2
+        head_b = kept_bytes[:half].decode("utf-8", errors="ignore")
+        tail_b = kept_bytes[-half:].decode("utf-8", errors="ignore")
+        kept = head_b + tail_b
 
-    total_lines = len(lines)
-    remaining_lines = max(0, total_lines - max_lines)
+    # Token window (~3 chars/token) on the kept text.
+    if _estimate_chars(kept) > max_tokens:
+        budget = max_tokens * 3
+        kept_head, kept_tail = _head_tail_split(kept, budget)
+        kept = kept_head + kept_tail
+
+    kept_line_count = kept.count("\n") + (0 if kept.endswith("\n") or not kept else 1)
+    omitted_lines = max(0, total_lines - kept_line_count)
+    kept_bytes_len = len(kept.encode("utf-8"))
 
     notice = (
-        f"\n\n[... Output truncated: showing first {min(len(kept_lines), max_lines)} lines "
-        f"({len(truncated_str.encode('utf-8'))} bytes) of {total_lines} total lines "
-        f"({len(encoded)} bytes). {remaining_lines} lines omitted ...]\n"
+        f"\n\n[... Output truncated: showing head+tail ({kept_line_count} lines, "
+        f"{kept_bytes_len} bytes) of {total_lines} total lines "
+        f"({total_bytes} bytes). {omitted_lines} lines omitted in the middle ...]\n"
     )
-    return truncated_str + notice
+    return kept + notice
 
 
 async def bound_and_store(
@@ -93,10 +134,11 @@ async def bound_and_store(
 
     output_id = f"out_{uuid.uuid4().hex[:8]}"
     spill_path: str | None = None
+    writer = _resolve_spill_writer()
 
-    if _spill_writer is not None:
+    if writer is not None:
         try:
-            spill_path = await _spill_writer(output_id, text)
+            spill_path = await writer(output_id, text)
         except Exception:
             logger.exception("Failed to write spilled tool output to sandbox workspace")
 

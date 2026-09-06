@@ -9,6 +9,8 @@ from typing import Annotated
 
 from agents import RunContextWrapper, function_tool
 
+from rakshak.tools.errors import model_failure_message, model_timeout_message
+
 
 @dataclass
 class TodoItem:
@@ -42,7 +44,11 @@ def _persist_todos(state_dir: Path | None) -> None:
             pass
 
 
-@function_tool(timeout=10)
+@function_tool(
+    timeout=10,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def create_todo(
     ctx: RunContextWrapper,
     id: Annotated[str, "Unique identifier for the task (short slug)."],
@@ -53,14 +59,22 @@ async def create_todo(
     return json.dumps({"success": True, "created": id, "task": task})
 
 
-@function_tool(timeout=10)
+@function_tool(
+    timeout=10,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def list_todos(ctx: RunContextWrapper) -> str:
     """List all current pending and completed tasks."""
     items = [asdict(t) for t in _TODOS.values()]
     return json.dumps({"success": True, "todos": items}, indent=2)
 
 
-@function_tool(timeout=10)
+@function_tool(
+    timeout=10,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def mark_todo_done(
     ctx: RunContextWrapper,
     id: Annotated[str, "Identifier of the task to mark as completed."],

@@ -8,10 +8,16 @@ from typing import Annotated
 
 from agents import RunContextWrapper, function_tool
 
+from rakshak.tools.errors import model_failure_message, model_timeout_message
+
 logger = logging.getLogger(__name__)
 
 
-@function_tool(timeout=60)
+@function_tool(
+    timeout=60,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def finish_scan(
     ctx: RunContextWrapper,
     executive_summary: Annotated[str, "Non-empty high-level summary of the assessment for executives."],

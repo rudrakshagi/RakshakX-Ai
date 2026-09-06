@@ -8,6 +8,8 @@ from typing import Annotated
 
 from agents import RunContextWrapper, function_tool
 
+from rakshak.tools.errors import model_failure_message, model_timeout_message
+
 _SKILLS_DIR = Path(__file__).parent.parent.parent / "skills"
 
 
@@ -31,7 +33,11 @@ def _list_all_skills() -> list[str]:
     return sorted(skills)
 
 
-@function_tool(timeout=10)
+@function_tool(
+    timeout=10,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def load_skill(
     ctx: RunContextWrapper,
     skill_name: Annotated[str, "Skill playbook to load, e.g. 'sql_injection', 'idor', 'ssrf'."],

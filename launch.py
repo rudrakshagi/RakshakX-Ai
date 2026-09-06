@@ -29,6 +29,9 @@ def start_bridge():
 def start_backend():
     """Start the Python Backend API server on port 8080."""
     os.environ["PYTHONPATH"] = str(ROOT_DIR)
+    # Operator-owned domains the scope guard allows without warnings.
+    # Only list domains you own or are explicitly authorized to test.
+    os.environ.setdefault("RAKSHAK_ALLOWED_SCOPES", "rudrakshai.in")
     from rakshak.interface.viewer.server import start_viewer_server
     start_viewer_server("latest", port=8080)
 
@@ -53,17 +56,6 @@ def main():
   👉 OPEN YOUR BROWSER AT: http://localhost:3000
 ===============================================================
 """)
-    # Start Bridge in background thread
-    t_bridge = threading.Thread(target=start_bridge, daemon=True)
-    t_bridge.start()
-    time.sleep(1)
-
-    # Start Backend in background thread
-    t_backend = threading.Thread(target=start_backend, daemon=True)
-    t_backend.start()
-    time.sleep(1)
-
-    # Start Frontend
     try:
         start_frontend()
     except KeyboardInterrupt:

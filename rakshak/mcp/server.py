@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
+import threading
+import urllib.request
 from typing import Any
 
 from rakshak.core.paths import base_runs_dir
@@ -93,17 +96,65 @@ TOOLS_MANIFEST = [
 ]
 
 
+def _post_scan_to_backend(target: str, mode: str, *, timeout: float = 5.0) -> dict[str, Any] | None:
+    """POST /api/scan on the local backend (stdlib only). Returns parsed JSON or None."""
+    base = os.environ.get("RAKSHAK_BACKEND_URL", "http://127.0.0.1:8080").rstrip("/")
+    url = f"{base}/api/scan"
+    payload = json.dumps({"target": target, "mode": mode}).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
 def handle_tool_call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Execute an MCP tool request."""
     if name == "rakshak_start_scan":
         target = arguments.get("target", "example.com")
         mode = arguments.get("mode", "blackbox")
-        return {
-            "status": "initiated",
-            "target": target,
-            "mode": mode,
-            "message": f"Autonomous {mode} assessment initiated for {target} inside isolated sandbox.",
-        }
+        try:
+            result_holder: dict[str, Any] = {}
+
+            def _call_backend() -> None:
+                try:
+                    result_holder["result"] = _post_scan_to_backend(target, mode, timeout=5.0)
+                except Exception:
+                    result_holder["result"] = None
+
+            # Spawn background thread so the sync stdio loop never blocks;
+            # join briefly so we can report the real scan_id when backend is up.
+            worker = threading.Thread(target=_call_backend, daemon=True)
+            worker.start()
+            worker.join(timeout=5.0)
+            backend_result = result_holder.get("result")
+            if backend_result and isinstance(backend_result, dict):
+                return {
+                    "status": "initiated",
+                    "target": target,
+                    "mode": mode,
+                    "scan_id": backend_result.get("scan_id"),
+                    "via": "backend-api",
+                    "message": backend_result.get("message") or f"Autonomous {mode} assessment initiated for {target} inside isolated sandbox.",
+                }
+            return {
+                "status": "queued_offline",
+                "target": target,
+                "mode": mode,
+                "message": (
+                    "Backend API at http://127.0.0.1:8080 unreachable; "
+                    "scan request queued offline. Start the viewer backend and retry."
+                ),
+            }
+        except Exception as exc:
+            logger.warning("rakshak_start_scan backend call failed: %s", exc)
+            return {
+                "status": "queued_offline",
+                "target": target,
+                "mode": mode,
+                "message": f"Backend unreachable ({exc}); scan request queued offline.",
+            }
 
     if name == "rakshak_list_findings":
         runs_base = base_runs_dir()

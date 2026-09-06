@@ -11,6 +11,7 @@ from typing import Annotated, Any, Literal
 from agents import RunContextWrapper, function_tool
 
 from rakshak.core.agents import coordinator_from_context
+from rakshak.tools.errors import model_failure_message, model_timeout_message
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,11 @@ def _render_completion_report(
     return "\n".join(lines)
 
 
-@function_tool(timeout=30)
+@function_tool(
+    timeout=30,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def view_agent_graph(ctx: RunContextWrapper) -> str:
     """Print the live multi-agent tree — all running, waiting, and completed agents."""
     inner = _ctx(ctx)
@@ -82,7 +87,11 @@ async def view_agent_graph(ctx: RunContextWrapper) -> str:
     })
 
 
-@function_tool(timeout=30)
+@function_tool(
+    timeout=30,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def send_message_to_agent(
     ctx: RunContextWrapper,
     target_agent_id: Annotated[str, "ID of the destination agent's mailbox."],
@@ -123,7 +132,11 @@ async def send_message_to_agent(
     })
 
 
-@function_tool(timeout=300)
+@function_tool(
+    timeout=300,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def wait_for_agents(
     ctx: RunContextWrapper,
     reason: Annotated[str, "Human-readable reason for waiting on child agents."] = "Waiting for child agents to complete their assigned tasks",
@@ -158,7 +171,11 @@ async def wait_for_agents(
     return json.dumps({"success": True, "status": "resumed", "pending_consumed": pending})
 
 
-@function_tool(timeout=120)
+@function_tool(
+    timeout=120,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def create_agent(
     ctx: RunContextWrapper,
     name: Annotated[str, "Human-readable name for the specialist subagent."],
@@ -194,7 +211,11 @@ async def create_agent(
         return json.dumps({"success": False, "error": f"Failed to spawn agent: {exc}"})
 
 
-@function_tool(timeout=30)
+@function_tool(
+    timeout=30,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def agent_finish(
     ctx: RunContextWrapper,
     result_summary: Annotated[str, "Summary of findings and work completed by this subagent."],

@@ -8,6 +8,8 @@ from typing import Annotated
 
 from agents import RunContextWrapper, function_tool
 
+from rakshak.tools.errors import model_failure_message, model_timeout_message
+
 _NOTES: dict[str, str] = {}
 
 
@@ -22,7 +24,11 @@ def hydrate_notes_from_disk(state_dir: Path) -> None:
             pass
 
 
-@function_tool(timeout=10)
+@function_tool(
+    timeout=10,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def create_note(
     ctx: RunContextWrapper,
     title: Annotated[str, "Short unique title for the note."],
@@ -33,13 +39,21 @@ async def create_note(
     return json.dumps({"success": True, "title": title, "length": len(content)})
 
 
-@function_tool(timeout=10)
+@function_tool(
+    timeout=10,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def list_notes(ctx: RunContextWrapper) -> str:
     """List titles of all recorded research notes."""
     return json.dumps({"success": True, "notes": list(_NOTES.keys())})
 
 
-@function_tool(timeout=10)
+@function_tool(
+    timeout=10,
+    failure_error_function=model_failure_message,
+    timeout_error_function=model_timeout_message,
+)
 async def get_note(
     ctx: RunContextWrapper,
     title: Annotated[str, "Title of the note to retrieve."],

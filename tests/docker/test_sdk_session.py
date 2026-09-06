@@ -35,6 +35,24 @@ async def test_exec_internal_short_passthrough():
 
 
 @pytest.mark.asyncio
+async def test_exec_internal_applies_default_timeout():
+    s = _make_session()
+    s._docker_client.exec_command.return_value = (0, "ok")
+    await s._exec_internal("sleep", "5")
+    kwargs = s._docker_client.exec_command.call_args.kwargs
+    assert kwargs["timeout_s"] == 300.0
+
+
+@pytest.mark.asyncio
+async def test_exec_internal_honors_sdk_timeout():
+    s = _make_session()
+    s._docker_client.exec_command.return_value = (0, "ok")
+    await s._exec_internal("sleep", "5", timeout=45.0)
+    kwargs = s._docker_client.exec_command.call_args.kwargs
+    assert kwargs["timeout_s"] == 45.0
+
+
+@pytest.mark.asyncio
 async def test_running_true():
     s = _make_session()
     s._container.reload = MagicMock()

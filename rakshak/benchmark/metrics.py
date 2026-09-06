@@ -41,6 +41,22 @@ class BenchmarkPrediction:
     match_score: float = 0.0
     assessed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
+    def __post_init__(self) -> None:
+        # Callers pass verified as "true"/"false"/1/0 from JSON — a raw
+        # string "false" is truthy in Python and would score a miss as TP.
+        self.verified = coerce_verified(self.verified)
+
+
+def coerce_verified(value: object) -> bool:
+    """Normalize truthy JSON-ish values to a real bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "verified", "confirmed", "yes", "1")
+    return bool(value)
+
 
 @dataclass
 class EvaluationResult:
@@ -128,11 +144,12 @@ def evaluate_single(
             result.is_tn = True
         return result
 
-    if verdict.is_present and prediction.verified:
+    verified = coerce_verified(prediction.verified)
+    if verdict.is_present and verified:
         result.is_tp = True
-    elif verdict.is_present and not prediction.verified:
+    elif verdict.is_present and not verified:
         result.is_fn = True
-    elif not verdict.is_present and prediction.verified:
+    elif not verdict.is_present and verified:
         result.is_fp = True
     else:
         result.is_tn = True
@@ -150,7 +167,16 @@ def build_scorecard(
     assessment_end: datetime,
 ) -> BenchmarkScorecard:
     """Build a full Benchmark Protocol v2.0 scorecard from predictions and ground-truth verdicts."""
-    verdict_map = {v.vuln_id: v for v in verdicts}
+    # Dedupe verdicts by id (first wins): duplicate ground-truth entries
+    # would otherwise inflate total_reference while verdict_map collapses
+    # them, skewing recall denominators.
+    verdict_map: dict[str, BenchmarkVerdict] = {}
+    for v in verdicts:
+        if v.vuln_id in verdict_map:
+            logger.warning("Duplicate ground-truth vuln_id %s ignored (first wins).", v.vuln_id)
+            continue
+        verdict_map[v.vuln_id] = v
+    unique_verdicts = list(verdict_map.values())
     all_ids = sorted(set(verdict_map) | set(predictions))
 
     results: list[EvaluationResult] = []
@@ -189,12 +215,13 @@ def build_scorecard(
     recall = compute_recall(tp, fn)
     f1 = compute_f1(precision, recall)
     verification_rate = compute_verification_rate(verified_count, total_predictions)
-    assessment_time = (assessment_end - assessment_start).total_seconds()
+    # Clock skew / swapped args must never produce negative durations.
+    assessment_time = max(0.0, (assessment_end - assessment_start).total_seconds())
 
     return BenchmarkScorecard(
         scan_id=scan_id,
         target=target,
-        total_reference=len(verdicts),
+        total_reference=len(unique_verdicts),
         total_predictions=total_predictions,
         tp=tp,
         fp=fp,

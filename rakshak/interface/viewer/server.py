@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 import psutil
 
 from rakshak.core.paths import base_runs_dir, run_dir_for, runtime_state_dir
+from rakshak.report.severity import normalize_severity
 
 logger = logging.getLogger(__name__)
 CONFIG_FILE = Path(".rakshakx") / "config.json"
@@ -198,7 +199,33 @@ def _apply_config_env(cfg: dict[str, Any]) -> None:
         os.environ["RAKSHAK_LLM__API_BASE"] = cfg["api_base"]
 
 
-def _run_scan_background(run_dir: Path, *, target: str, mode: str, prompt: str, benchmark_target: str = "", scope: str = "") -> None:
+def _mark_agents_terminal(run_dir: Path, terminal: str) -> None:
+    """Best-effort: persist terminal agent statuses to agents.json on scan end.
+
+    The /api/agents* endpoints normalize statuses at VIEW time, but offline
+    readers (watch scripts, diagnostics) see the raw file — without this a
+    crashed/completed scan's agents.json says "running" forever. Never raises.
+    """
+    try:
+        agents_file = runtime_state_dir(run_dir) / "agents.json"
+        if not agents_file.exists():
+            return
+        state = json.loads(agents_file.read_text(encoding="utf-8"))
+        statuses = dict(state.get("statuses", {}) or {})
+        changed = False
+        for aid in (state.get("names", {}) or {}):
+            if statuses.get(aid, "running") in ("running", "waiting", ""):
+                statuses[aid] = terminal
+                changed = True
+        if changed:
+            state["statuses"] = statuses
+            agents_file.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+            logger.info("Marked %d agents %s for scan %s.", sum(1 for _ in statuses), terminal, run_dir.name)
+    except Exception:
+        logger.debug("Terminal agent marking failed for %s; continuing.", run_dir.name, exc_info=True)
+
+
+def _run_scan_background(run_dir: Path, *, target: str, mode: str, prompt: str, benchmark_target: str = "", scope: str = "", max_turns: int = 60, max_budget_usd: float = 8.0) -> None:
     """Execute the real autonomous scan in a background thread, updating live status."""
     scan_id = run_dir.name
     _write_run_meta(run_dir, status="Running", started_at=datetime.now(UTC).isoformat())
@@ -218,17 +245,19 @@ def _run_scan_background(run_dir: Path, *, target: str, mode: str, prompt: str, 
             scan_id=scan_id,
             scan_mode=effective_mode,
             is_whitebox=is_whitebox,
-            max_budget_usd=3.0,
-            max_turns=30,
+            max_budget_usd=max_budget_usd,
+            max_turns=max_turns,
             prompt_verbatim=prompt or None,
             scope=scope or target,
             benchmark_target=benchmark_target or None,
         ))
         duration = f"{int(time.time() - started) // 60}m {int(time.time() - started) % 60}s"
         _write_run_meta(run_dir, status="Completed", duration=duration, ended_at=datetime.now(UTC).isoformat())
+        _mark_agents_terminal(run_dir, "completed")
     except Exception as exc:
         logger.error("Background scan %s failed: %s\n%s", scan_id, exc, traceback.format_exc())
         _write_run_meta(run_dir, status="Failed", error=str(exc), ended_at=datetime.now(UTC).isoformat())
+        _mark_agents_terminal(run_dir, "failed")
 
 
 def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
@@ -273,17 +302,27 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 prompt = body_data.get("prompt", "")
                 benchmark_target = body_data.get("benchmark_target", body_data.get("benchmarkTarget", ""))
                 scope = body_data.get("scope", target)
+                # Per-request caps, clamped to sane bounds (config ceiling is 10 USD).
+                try:
+                    max_turns = max(1, min(150, int(body_data.get("max_turns", 60))))
+                except (TypeError, ValueError):
+                    max_turns = 60
+                try:
+                    max_budget_usd = max(0.5, min(10.0, float(body_data.get("max_budget_usd", 8.0))))
+                except (TypeError, ValueError):
+                    max_budget_usd = 8.0
                 scan_id = f"scan-{uuid.uuid4().hex[:8]}"
                 new_run_dir = run_dir_for(scan_id)
                 with contextlib.suppress(Exception):
                     new_run_dir.mkdir(parents=True, exist_ok=True)
                 _write_run_meta(new_run_dir, scan_id=scan_id, target=target, mode=mode,
-                                prompt=prompt, scope=scope, benchmark_target=benchmark_target, status="Queued")
+                                prompt=prompt, scope=scope, benchmark_target=benchmark_target,
+                                max_turns=max_turns, max_budget_usd=max_budget_usd, status="Queued")
                 _set_active_scan(new_run_dir)
                 threading.Thread(
                     target=_run_scan_background,
                     args=(new_run_dir,),
-                    kwargs={"target": target, "mode": mode, "prompt": prompt, "benchmark_target": benchmark_target, "scope": scope},
+                    kwargs={"target": target, "mode": mode, "prompt": prompt, "benchmark_target": benchmark_target, "scope": scope, "max_turns": max_turns, "max_budget_usd": max_budget_usd},
                     daemon=True,
                 ).start()
                 _send_json({
@@ -294,6 +333,8 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                     "prompt": prompt,
                     "scope": scope,
                     "benchmark_target": benchmark_target,
+                    "max_turns": max_turns,
+                    "max_budget_usd": max_budget_usd,
                     "message": f"Autonomous security assessment started for {target}",
                 })
                 return
@@ -321,6 +362,7 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
 
             if path == "/api/steer":
                 instruction = body_data.get("instruction", "")
+                target_agent_id = body_data.get("target_agent_id") or body_data.get("target") or ""
                 # Persist to mailbox file so runner can poll it (Phase 3 steer queue)
                 try:
                     active_run_dir = _resolve_run_dir(run_dir)
@@ -333,7 +375,10 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                             existing = json.loads(steer_file.read_text(encoding="utf-8"))
                             if not isinstance(existing, list):
                                 existing = []
-                    existing.append({"instruction": instruction, "timestamp": time.time(), "iso": datetime.now(UTC).isoformat()})
+                    entry: dict[str, Any] = {"instruction": instruction, "timestamp": time.time(), "iso": datetime.now(UTC).isoformat()}
+                    if target_agent_id:
+                        entry["target_agent_id"] = str(target_agent_id)
+                    existing.append(entry)
                     # keep last 50
                     existing = existing[-50:]
                     steer_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -421,20 +466,35 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                     with contextlib.suppress(Exception):
                         agents_data = json.loads(agents_file.read_text(encoding="utf-8"))
 
-                crit = sum(1 for v in vulns if (v.get("severity") or "").lower() == "critical")
-                high = sum(1 for v in vulns if (v.get("severity") or "").lower() == "high")
-                med = sum(1 for v in vulns if (v.get("severity") or "").lower() == "medium")
-                low = sum(1 for v in vulns if (v.get("severity") or "").lower() == "low")
+                crit = sum(1 for v in vulns if normalize_severity(v.get("severity")) == "critical")
+                high = sum(1 for v in vulns if normalize_severity(v.get("severity")) == "high")
+                med = sum(1 for v in vulns if normalize_severity(v.get("severity")) == "medium")
+                low = sum(1 for v in vulns if normalize_severity(v.get("severity")) == "low")
+                info = sum(1 for v in vulns if normalize_severity(v.get("severity")) == "informational")
 
                 runs_base = base_runs_dir()
                 runs_count = 0
                 if runs_base.exists():
                     runs_count = len([d for d in runs_base.iterdir() if d.is_dir() and not d.name.startswith(".")])
 
+                run_target = "example.com"
+                run_status = "Analyzing"
+                meta_file = active_run_dir / "run_meta.json"
+                if meta_file.exists():
+                    with contextlib.suppress(Exception):
+                        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                        run_target = meta.get("target") or run_target
+                        # A terminal run_meta means the scan is done, not analyzing.
+                        if str(meta.get("status", "")).lower() in ("completed", "failed"):
+                            run_status = str(meta.get("status"))
+                if not active_run_dir.exists():
+                    run_target = "No Active Target"
+                    run_status = "Idle"
+
                 _send_json({
                     "scan_id": active_run_dir.name if active_run_dir.exists() else None,
-                    "target": "example.com" if active_run_dir.exists() else "No Active Target",
-                    "status": "Analyzing" if active_run_dir.exists() else "Idle",
+                    "target": run_target,
+                    "status": run_status,
                     "total_findings": len(vulns),
                     "total_scans": runs_count,
                     "active_agents": len(agents_data.get("names", {})),
@@ -443,6 +503,7 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                         "high": high,
                         "medium": med,
                         "low": low,
+                        "informational": info,
                     }
                 })
                 return
@@ -484,6 +545,57 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 _send_json(data)
                 return
 
+            if path == "/api/logs":
+                source_filter = (query.get("source") or ["all"])[0].lower()
+                scan_filter = (query.get("scan") or [""])[0].strip()
+                try:
+                    limit = min(500, max(10, int((query.get("lines") or ["100"])[0])))
+                except (ValueError, TypeError):
+                    limit = 100
+
+                logs_dir = Path("logs")
+                logs: list[dict[str, Any]] = []
+
+                def _read_tail(p: Path, max_lines: int) -> list[str]:
+                    if not p.exists():
+                        return []
+                    try:
+                        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+                        return [l.strip() for l in lines if l.strip()][-max_lines:]
+                    except Exception:
+                        return []
+
+                def _parse(line: str, source: str) -> dict[str, Any]:
+                    level = "INFO"
+                    if "non-fatal" in line or "Tracing client error" in line:
+                        level = "INFO"
+                    elif any(k in line for k in ("ERROR", "error", "Exception", "failed", "FAILED")):
+                        level = "ERROR"
+                    elif any(k in line for k in ("WARN", "warning", "WARNING")):
+                        level = "WARN"
+                    elif any(k in line for k in ("SUCCESS", "online", "200 OK")):
+                        level = "SUCCESS"
+                    ts = datetime.now(UTC).strftime("%H:%M:%S")
+                    return {"timestamp": ts, "level": level, "source": source, "message": line, "raw": line}
+
+                if source_filter in ("all", "backend"):
+                    for l in _read_tail(logs_dir / "backend.log", limit):
+                        logs.append(_parse(l, "Python Backend"))
+                if source_filter in ("all", "bridge"):
+                    for l in _read_tail(logs_dir / "bridge.log", limit):
+                        logs.append(_parse(l, "OpenCode Bridge"))
+                if source_filter in ("all", "frontend"):
+                    for l in _read_tail(logs_dir / "frontend.log", limit):
+                        logs.append(_parse(l, "Frontend Console"))
+                if source_filter in ("all", "scan"):
+                    for l in _read_tail(logs_dir / "rudra-passive" / "raw_scan.log", limit):
+                        logs.append(_parse(l, "Docker Sandbox Target"))
+
+                if scan_filter:
+                    logs = [e for e in logs if scan_filter in (e.get("raw") or "")]
+                _send_json({"ok": True, "count": len(logs[-limit:]), "logs": logs[-limit:], "scan": scan_filter or None})
+                return
+
             if path == "/api/agents":
                 active_run_dir = _get_requested_run_dir()
                 state_dir = runtime_state_dir(active_run_dir)
@@ -492,7 +604,60 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
                 if agents_file.exists():
                     with contextlib.suppress(Exception):
                         agents_state = json.loads(agents_file.read_text(encoding="utf-8"))
+                run_meta_file = active_run_dir / "run_meta.json"
+                run_st = "idle"
+                if run_meta_file.exists():
+                    with contextlib.suppress(Exception):
+                        run_meta = json.loads(run_meta_file.read_text(encoding="utf-8"))
+                        run_st = str(run_meta.get("status", "")).lower()
+                if run_st not in ("running", "analyzing"):
+                    cur_statuses = agents_state.get("statuses", {}) or {}
+                    fixed = dict(cur_statuses)
+                    for aid in (agents_state.get("names", {}) or {}):
+                        if fixed.get(aid, "running") in ("running", "waiting", ""):
+                            fixed[aid] = "completed" if run_st == "completed" else "stopped"
+                    agents_state["statuses"] = fixed
                 _send_json(agents_state)
+                return
+
+            if path == "/api/agents/health":
+                from rakshak.interface.viewer.agent_health import (
+                    compute_agent_health,
+                    summarize_health,
+                )
+                active_run_dir = _get_requested_run_dir()
+                state_dir = runtime_state_dir(active_run_dir)
+                agents_file = state_dir / "agents.json"
+                agents_state_h: dict[str, Any] = {"names": {}, "statuses": {}, "metadata": {}}
+                if agents_file.exists():
+                    with contextlib.suppress(Exception):
+                        agents_state_h = json.loads(agents_file.read_text(encoding="utf-8"))
+                # Belt & braces for runs that ended before terminal statuses were
+                # persisted: a Completed/Failed run_meta means still-running or
+                # waiting agents are done. Real terminal states (failed,
+                # crashed, completed, stopped) are NEVER overwritten — a failed
+                # agent must stay failed, not be masked as finished.
+                run_meta_file = active_run_dir / "run_meta.json"
+                run_status = ""
+                if run_meta_file.exists():
+                    with contextlib.suppress(Exception):
+                        run_status = str(json.loads(run_meta_file.read_text(encoding="utf-8")).get("status", "")).lower()
+                if run_status not in ("running", "analyzing"):
+                    cur_statuses = agents_state_h.get("statuses", {}) or {}
+                    fixed = dict(cur_statuses)
+                    for aid in (agents_state_h.get("names", {}) or {}):
+                        if fixed.get(aid, "running") in ("running", "waiting", ""):
+                            fixed[aid] = "completed" if run_status == "completed" else "stopped"
+                    agents_state_h = {**agents_state_h, "statuses": fixed}
+                report = compute_agent_health(agents_state_h)
+                _send_json({
+                    "scan_id": active_run_dir.name if active_run_dir.exists() else None,
+                    "checked_at": time.time(),
+                    "watchdog_interval_s": 5,
+                    "stuck_after_s": 180.0,
+                    "agents": report,
+                    "summary": summarize_health(report),
+                })
                 return
 
             if path == "/api/report":
@@ -667,11 +832,126 @@ def _make_handler(run_dir: Path) -> type[BaseHTTPRequestHandler]:
     return ApiHandler
 
 
+def _most_recent_run_dir() -> Path | None:
+    """Return the most recently modified real scan dir, or None.
+
+    Used at startup so a restart doesn't pin default views to a stale
+    placeholder (e.g. the ``latest`` dir) when newer completed scans exist.
+    """
+    base = base_runs_dir()
+    best: Path | None = None
+    best_mtime = -1.0
+    if base.exists():
+        for d in base.iterdir():
+            if not d.is_dir() or d.name.startswith("."):
+                continue
+            try:
+                mt = d.stat().st_mtime
+            except OSError:
+                continue
+            if mt > best_mtime:
+                best_mtime = mt
+                best = d
+    return best
+
+
+def _is_scan_container_name(name: str) -> bool:
+    """True for scan sandbox containers (`rakshak-<scan_id>`), never targets.
+
+    Docker's ``name=`` filter is a substring match, so `rakshak-` also
+    catches `rakshakx-juice-shop`/`rakshakx-dvwa` — the explicit
+    `rakshakx-` exclusion keeps target apps safe from the reaper.
+    """
+    return name.startswith("rakshak-") and not name.startswith("rakshakx-")
+
+
+def _reap_orphaned_scans() -> None:
+    """Mark stale scans Stopped and remove their leaked containers at boot.
+
+    Scan workers live as threads inside the backend process, so any run_meta
+    still saying "Running" when a fresh backend boots belongs to a dead
+    process (e.g. after a restart) and would otherwise sit as "Running"
+    forever with a leaked `rakshak-*` scan container. A just-booted backend
+    owns no live scans, so both cleanups are safe here. Failures never
+    block server startup.
+
+    NOTE: scan containers are named `rakshak-<scan_id>` (session_manager).
+    The `rakshakx-*` targets (juice-shop, dvwa) must NEVER be touched — the
+    startswith guard below excludes them even though docker's name filter
+    is a substring match.
+    """
+    try:
+        base = base_runs_dir()
+        if base.exists():
+            for d in base.iterdir():
+                if not d.is_dir() or d.name.startswith("."):
+                    continue
+                meta_file = d / "run_meta.json"
+                if not meta_file.exists():
+                    continue
+                try:
+                    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if str(meta.get("status", "")).lower() == "running":
+                    meta["status"] = "Stopped"
+                    meta["ended_at"] = datetime.now(UTC).isoformat()
+                    meta["note"] = (
+                        "Backend restarted while this scan was active; its worker "
+                        "did not survive the restart. Relaunch for a fresh assessment."
+                    )
+                    with contextlib.suppress(Exception):
+                        meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+                    logger.info("Reaped orphaned scan %s (marked Stopped).", d.name)
+    except Exception:
+        logger.debug("Orphan scan reaping failed; continuing.", exc_info=True)
+    try:
+        import subprocess as _sp
+        out = _sp.run(
+            ["docker", "ps", "-a", "--filter", "name=rakshak-",
+             "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=30,
+        )
+        for name in (out.stdout or "").split():
+            name = name.strip()
+            # Scan containers only (`rakshak-<scan_id>`); never the
+            # `rakshakx-*` target apps (juice-shop, dvwa).
+            if not _is_scan_container_name(name):
+                continue
+            rm = _sp.run(["docker", "rm", "-f", name],
+                         capture_output=True, text=True, timeout=60)
+            if rm.returncode == 0:
+                logger.info("Removed orphaned scan container %s.", name)
+    except Exception:
+        logger.debug("Orphan container cleanup failed; continuing.", exc_info=True)
+
+
 def start_viewer_server(scan_id: str, port: int = 8080) -> None:
     """Launch the backend API server."""
     _apply_config_env(_load_user_config())
-    _set_active_scan(run_dir_for(scan_id))
-    run_dir = run_dir_for(scan_id)
+    from rakshak.interface.viewer.supervisor import (
+        setup_backend_log_rotation,
+        start_supervisor_thread,
+    )
+    # Canonical rotating backend log (logs/backend.log) + sidecar supervisor
+    # so bridge/UI deaths self-heal instead of silently breaking chat/console.
+    setup_backend_log_rotation()
+    _reap_orphaned_scans()
+    start_supervisor_thread()
+    initial = run_dir_for(scan_id)
+    # If the requested view dir is a stale placeholder (no agents/vulns),
+    # fall back to the most recent real scan so default views show data.
+    try:
+        state_dir = runtime_state_dir(initial)
+        has_data = (initial / "vulnerabilities.json").exists() or (state_dir / "agents.json").exists()
+    except Exception:
+        has_data = False
+    if not has_data:
+        recent = _most_recent_run_dir()
+        if recent is not None:
+            initial = recent
+    _set_active_scan(initial)
+    run_dir = initial
     handler_cls = _make_handler(run_dir)
     server = ThreadingHTTPServer(("0.0.0.0", port), handler_cls)
     logger.info("RakshakX Backend API running at http://127.0.0.1:%d for scan %s", port, scan_id)

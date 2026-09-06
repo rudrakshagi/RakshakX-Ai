@@ -8,15 +8,31 @@ import pytest
 from agents import RunConfig
 
 from rakshak.core.execution import (
+    FINAL_PHASE_MARKS,
+    FINAL_PHASE_WINDOW,
     MAX_CHILDREN,
     _count_children,
     _get_depth,
     _is_rate_limited,
     _rate_limit_backoff,
+    final_phase_notice,
     run_agent_loop,
     spawn_child_agent,
 )
 from rakshak.core.sessions import open_agent_session
+
+
+def test_final_phase_constants():
+    assert FINAL_PHASE_WINDOW == 10
+    assert set(FINAL_PHASE_MARKS) == {10, 5, 2}
+
+
+def test_final_phase_notice_bans_new_scans():
+    msg = final_phase_notice(7)
+    assert "7 turns left" in msg
+    assert "finish_scan" in msg
+    assert "create_vulnerability_report" in msg
+    assert "ffuf" in msg
 
 
 def test_is_rate_limited_on_ratelimit_text():

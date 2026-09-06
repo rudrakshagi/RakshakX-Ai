@@ -4,10 +4,24 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from html import escape as _html_escape
 from pathlib import Path
 from typing import Any
 
+from rakshak.report.severity import normalize_severity
+
 logger = logging.getLogger(__name__)
+
+
+def _t(value: Any) -> str:
+    """Escape finding/narrative text for ReportLab Paragraph markup.
+
+    PoCs and titles routinely contain raw `<script>` tags — unescaped, the
+    ParaParser aborts the whole PDF with "parse ended with N unclosed tags".
+    """
+    if value is None:
+        return ""
+    return _html_escape(str(value), quote=False)
 
 
 INTEGRITY_STATEMENT_PDF = (
@@ -103,11 +117,11 @@ def generate_pdf_report(
     story.append(Paragraph(f"<b>Generated:</b> {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}", body_style))
     story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#b91c1c"), spaceAfter=15))
 
-    # Findings Summary Metric Cards
-    crit = sum(1 for v in vulnerabilities if v.get("severity") == "critical")
-    high = sum(1 for v in vulnerabilities if v.get("severity") == "high")
-    med = sum(1 for v in vulnerabilities if v.get("severity") == "medium")
-    low = sum(1 for v in vulnerabilities if v.get("severity") == "low")
+    # Findings Summary Metric Cards (normalized: "Critical"/"NONE"/"" all count)
+    crit = sum(1 for v in vulnerabilities if normalize_severity(v.get("severity")) == "critical")
+    high = sum(1 for v in vulnerabilities if normalize_severity(v.get("severity")) == "high")
+    med = sum(1 for v in vulnerabilities if normalize_severity(v.get("severity")) == "medium")
+    low = sum(1 for v in vulnerabilities if normalize_severity(v.get("severity")) == "low")
 
     metrics_data = [
         [
@@ -131,7 +145,7 @@ def generate_pdf_report(
 
     # 1. Executive Summary
     story.append(Paragraph("1. Executive Summary", h2_style))
-    story.append(Paragraph(executive_summary or "Autonomous security assessment completed with dynamic verification.", body_style))
+    story.append(Paragraph(_t(executive_summary) or "Autonomous security assessment completed with dynamic verification.", body_style))
     story.append(Spacer(1, 10))
 
     # 2. Scope and Target
@@ -141,9 +155,9 @@ def generate_pdf_report(
 
     # 3. Methodology
     story.append(Paragraph("3. Assessment Methodology", h2_style))
-    story.append(Paragraph(methodology or "Conducted dynamic multi-agent probing inside an isolated Kali Linux sandbox.", body_style))
+    story.append(Paragraph(_t(methodology) or "Conducted dynamic multi-agent probing inside an isolated Kali Linux sandbox.", body_style))
     if technical_analysis:
-        story.append(Paragraph(technical_analysis, body_style))
+        story.append(Paragraph(_t(technical_analysis), body_style))
     story.append(Spacer(1, 10))
 
     # 4. Environment and Tool Information
@@ -169,24 +183,24 @@ def generate_pdf_report(
             story.append(Spacer(1, 6))
             return
         for idx, v in enumerate(tier_vulns, start=1):
-            title = v.get("title", "Untitled Vulnerability")
-            sev = v.get("severity", "medium").upper()
-            score = v.get("cvss_score", "N/A")
-            ep = v.get("endpoint", "N/A")
-            desc = v.get("description", "No description provided.")
-            poc = v.get("poc", "# No PoC provided")
-            vs = v.get("verification_status", "Confirmed")
-            conf = v.get("confidence", vs)
+            title = _t(v.get("title", "Untitled Vulnerability"))
+            sev = _t(normalize_severity(v.get("severity", "medium"))).upper()
+            score = _t(v.get("cvss_score", "N/A"))
+            ep = _t(v.get("endpoint", "N/A"))
+            desc = _t(v.get("description", "No description provided."))
+            poc = _t(v.get("poc", "# No PoC provided"))
+            vs = _t(v.get("verification_status", "Confirmed"))
+            conf = _t(v.get("confidence", v.get("verification_status", "Confirmed")))
             story.append(Paragraph(f"<b>{idx}. {title}</b> — <font color='#b91c1c'><b>{sev} (CVSS {score})</b></font> — {vs}", h2_style))
-            story.append(Paragraph(f"<b>Affected:</b> <code>{ep}</code> &nbsp;|&nbsp; <b>CWE:</b> {v.get('cwe_id', 'N/A')} &nbsp;|&nbsp; <b>Confidence:</b> {conf}", body_style))
+            story.append(Paragraph(f"<b>Affected:</b> <code>{ep}</code> &nbsp;|&nbsp; <b>CWE:</b> {_t(v.get('cwe_id', 'N/A'))} &nbsp;|&nbsp; <b>Confidence:</b> {conf}", body_style))
             story.append(Paragraph(f"<b>Description:</b> {desc}", body_style))
-            story.append(Paragraph(f"<b>Impact:</b> {v.get('impact', 'See severity and CVSS vector.')}", body_style))
+            story.append(Paragraph(f"<b>Impact:</b> {_t(v.get('impact', 'See severity and CVSS vector.'))}", body_style))
             story.append(Paragraph("<b>Evidence / Proof of Concept:</b>", body_style))
-            story.append(Paragraph(poc.replace("<", "&lt;").replace(">", "&gt;"), code_style))
+            story.append(Paragraph(poc, code_style))
             patch = v.get("remediation_patch") or v.get("remediation")
             if patch:
                 story.append(Paragraph("<b>Remediation:</b>", body_style))
-                story.append(Paragraph(patch.replace("<", "&lt;").replace(">", "&gt;"), code_style))
+                story.append(Paragraph(_t(patch), code_style))
             story.append(Spacer(1, 8))
 
     # 5, 6, 7 tiers
@@ -204,7 +218,7 @@ def generate_pdf_report(
     story.append(Paragraph("Per-finding impact is listed above; where not explicit, severity is the primary risk indicator.", body_style))
     story.append(Spacer(1, 6))
     story.append(Paragraph("11. Remediation", h2_style))
-    story.append(Paragraph(recommendations or "Apply parameterized queries, output encoding, least privilege, strict access controls, and patch management.", body_style))
+    story.append(Paragraph(_t(recommendations) or "Apply parameterized queries, output encoding, least privilege, strict access controls, and patch management.", body_style))
     story.append(Spacer(1, 8))
     story.append(Paragraph("12. Limitations", h2_style))
     story.append(Paragraph(

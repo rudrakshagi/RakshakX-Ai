@@ -14,6 +14,7 @@ from rakshak.benchmark.metrics import (
     evaluate_benchmark,
 )
 from rakshak.report.dedupe import normalize_endpoint
+from rakshak.report.severity import normalize_severity
 
 # ------------------------------------------------------------------
 # Ground-truth loader
@@ -30,7 +31,7 @@ def load_ground_truth(path: Path) -> list[BenchmarkVerdict]:
             title=item.get("title", ""),
             category=item.get("category", ""),
             cwe_id=item.get("cwe_id", ""),
-            severity=item.get("severity", "MEDIUM"),
+            severity=normalize_severity(item.get("severity", "MEDIUM")),
             endpoint=item.get("endpoint", ""),
             is_present=item.get("is_present", True),
         ))
@@ -164,7 +165,7 @@ def vulnerabilities_to_predictions(
                 title=vuln.get("title", verdict.title),
                 category=vuln.get("category", verdict.category),
                 cwe_id=vuln.get("cwe_id", verdict.cwe_id),
-                severity=vuln.get("severity", verdict.severity),
+                severity=normalize_severity(vuln.get("severity", verdict.severity)),
                 endpoint=vuln.get("endpoint", verdict.endpoint),
                 verified=bool(verified),
                 match_score=best_score,
@@ -180,7 +181,7 @@ def vulnerabilities_to_predictions(
                 title=vuln.get("title", f"Unmatched finding {idx+1}"),
                 category=vuln.get("category", "unknown"),
                 cwe_id=vuln.get("cwe_id", "CWE-Unknown"),
-                severity=vuln.get("severity", "MEDIUM"),
+                severity=normalize_severity(vuln.get("severity", "MEDIUM")),
                 endpoint=vuln.get("endpoint", ""),
                 verified=bool(verified),
                 match_score=best_score,

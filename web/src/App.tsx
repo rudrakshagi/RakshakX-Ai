@@ -35,6 +35,7 @@ import { ReportsCenter } from './components/app/ReportsCenter';
 import { BenchmarksView } from './components/app/BenchmarksView';
 import { SettingsView } from './components/app/SettingsView';
 import { AiChatView } from './components/app/AiChatView';
+import { LiveLogsConsole } from './components/app/LiveLogsConsole';
 
 export function App() {
   const [currentView, setCurrentView] = useState<'landing' | 'app'>('landing');
@@ -290,7 +291,7 @@ export function App() {
           )}
 
           {appTab === 'agents' && (
-            <AgentTopologyView liveAgents={agents} />
+            <AgentTopologyView liveAgents={agents} onStartScan={handleStartScan} />
           )}
 
           {appTab === 'playbooks' && (
@@ -313,6 +314,10 @@ export function App() {
 
           {appTab === 'ai-chat' && (
             <AiChatView />
+          )}
+
+          {appTab === 'logs' && (
+            <LiveLogsConsole />
           )}
         </AppLayout>
       )}

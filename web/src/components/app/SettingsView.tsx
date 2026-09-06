@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Bot, Shield, Check, Eye, EyeOff, Save, Sparkles, Server, Sliders, AlertCircle, Copy, Terminal, Activity } from 'lucide-react';
+import { Key, Bot, Shield, Check, Eye, EyeOff, Save, Sparkles, Server, Sliders, AlertCircle, Copy, Terminal, Activity, Wrench } from 'lucide-react';
+import { CHAT_APPROVAL_STORAGE_KEY } from '../../data/chatTools';
 
 export const SettingsView: React.FC = () => {
   const [provider, setProvider] = useState('openai');
@@ -12,6 +13,23 @@ export const SettingsView: React.FC = () => {
   const [savedStatus, setSavedStatus] = useState<string | null>(null);
   const [isKeyConfigured, setIsKeyConfigured] = useState(false);
   const [copiedMcp, setCopiedMcp] = useState(false);
+  const [autoApproveTools, setAutoApproveTools] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(CHAT_APPROVAL_STORAGE_KEY) !== 'manual';
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleAutoApproveTools = () => {
+    setAutoApproveTools((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(CHAT_APPROVAL_STORAGE_KEY, next ? 'auto' : 'manual');
+      } catch {}
+      return next;
+    });
+  };
 
   useEffect(() => {
     async function loadConfig() {
@@ -144,6 +162,38 @@ export const SettingsView: React.FC = () => {
           <div className="text-[11px] text-slate-500 dark:text-slate-400">
             Paste this snippet into your IDE's <code>mcp_config.json</code> or Antigravity tool settings. Your IDE's active LLM will automatically control RakshakX pentest tools!
           </div>
+        </div>
+      </div>
+
+      {/* 1b. Agentic Approval Default Card */}
+      <div className="p-8 rounded-2xl bg-white dark:bg-[#0E1524] border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 text-xs font-semibold border border-amber-200 dark:border-amber-900/60">
+              <Wrench className="w-3.5 h-3.5" />
+              <span>AGENTIC APPROVAL DEFAULT</span>
+            </div>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+              Auto-approve tool calls
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              Destructive tools (start_scan, agent_spawn, agent_stop, exec_command, finish_scan) always confirm unless chat-level auto-approve is on.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleAutoApproveTools}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+              autoApproveTools ? 'bg-slate-900 dark:bg-brand-600' : 'bg-slate-200 dark:bg-slate-700'
+            }`}
+            aria-pressed={autoApproveTools}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                autoApproveTools ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
         </div>
       </div>
 

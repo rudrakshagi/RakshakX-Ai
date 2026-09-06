@@ -6,10 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from rakshak.report.severity import normalize_severity
+
 
 def _cvss_to_sarif_level(severity: str) -> str:
-    """Map CVSS severity strings to SARIF rule default levels."""
-    sev = severity.lower()
+    """Map canonical severity strings to SARIF rule default levels."""
+    sev = normalize_severity(severity)
     if sev in ("critical", "high"):
         return "error"
     if sev == "medium":
@@ -31,7 +33,7 @@ def generate_sarif_report(
     for vuln in vulnerabilities:
         rule_id = vuln.get("cwe_id") or "CWE-Unknown"
         title = vuln.get("title", "Security Vulnerability")
-        severity = vuln.get("severity", "medium")
+        severity = normalize_severity(vuln.get("severity", "medium"))
         sarif_level = _cvss_to_sarif_level(severity)
 
         if rule_id not in seen_rule_ids:

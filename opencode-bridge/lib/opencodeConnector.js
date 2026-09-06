@@ -28,6 +28,28 @@ const FORWARDABLE_CHAT_FIELDS = [
   "user",
 ];
 
+// Fallback model (passthrough `oc/` form) used when the requested model
+// errors in a way that smells like model-side failure (429/5xx, or a 400
+// about the model itself — not about our arguments). Overridable so
+// operators can pin whatever is healthy on their tier.
+export const DEFAULT_FALLBACK_MODEL =
+  process.env.RAKSHAK_FALLBACK_MODEL ?? "oc/big-pickle";
+
+// 400-body markers that point at the MODEL (worth retrying on fallback),
+// as opposed to markers that point at OUR request (retry would fail again).
+const MODEL_FAULT_MARKERS = [
+  "model_not_found",
+  "model not found",
+  "unknown model",
+  "unsupported model",
+  "model_not_supported",
+  "does not exist",
+  "not available",
+  "unknown parameter",
+  "unsupported parameter",
+  "muse-spark",
+];
+
 export class OpenCodeConnector {
   /**
    * @param {object} provider - providers/opencode.js shape
@@ -102,10 +124,54 @@ export class OpenCodeConnector {
     return undefined;
   }
 
+  /**
+   * Translate chat-style messages to Responses `input` items.
+   * Plain user/system messages pass through, but the agentic loop appends
+   * two shapes Responses rejects (`input[N] did not match any supported
+   * type`): assistant messages carrying `tool_calls`, and `role: "tool"`
+   * result messages. Those become `function_call` /
+   * `function_call_output` items linked by call_id.
+   */
+  _translateMessagesForResponses(messages) {
+    if (!Array.isArray(messages)) return undefined;
+    const out = [];
+    for (const m of messages) {
+      if (!m || typeof m !== "object") continue;
+      if (m.role === "tool") {
+        out.push({
+          type: "function_call_output",
+          call_id: m.tool_call_id,
+          output: typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""),
+        });
+        continue;
+      }
+      if (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+        if (typeof m.content === "string" && m.content.length > 0) {
+          out.push({ type: "message", role: "assistant", content: m.content });
+        }
+        for (const tc of m.tool_calls) {
+          if (!tc?.function?.name) continue;
+          out.push({
+            type: "function_call",
+            call_id: tc.id,
+            name: tc.function.name,
+            arguments:
+              typeof tc.function.arguments === "string"
+                ? tc.function.arguments
+                : JSON.stringify(tc.function.arguments ?? {}),
+          });
+        }
+        continue;
+      }
+      out.push(m);
+    }
+    return out;
+  }
+
   _buildResponsesPayload(rawBody, upstreamModelId) {
     const payload = { model: upstreamModelId };
-    // Responses takes `input`, which accepts the same message array shape.
-    if (rawBody.messages !== undefined) payload.input = rawBody.messages;
+    // Responses takes `input` — translated (tool messages converted).
+    if (rawBody.messages !== undefined) payload.input = this._translateMessagesForResponses(rawBody.messages);
     if (rawBody.stream !== undefined) payload.stream = rawBody.stream;
     for (const field of ["temperature", "top_p", "user"]) {
       if (rawBody[field] !== undefined) payload[field] = rawBody[field];
@@ -210,6 +276,11 @@ export class OpenCodeConnector {
 
     let buffer = "";
     let sawText = false;
+    // Accumulate function-call arguments deltas per call id so streaming
+    // tool calls arrive as incremental tool_calls chunks.
+    const fnArgs = new Map(); // callId -> { name, args }
+    const fnIndex = new Map(); // callId -> index
+    let fnCounter = 0;
 
     function emitDelta(text) {
       return self._chatChunk(requestedModel, chunkId, created, { role: "assistant", content: text }, null);
@@ -240,18 +311,63 @@ export class OpenCodeConnector {
               if (evt?.type === "response.output_text.delta" && typeof evt.delta === "string") {
                 sawText = true;
                 send(emitDelta(evt.delta));
+              } else if (evt?.type === "response.function_call_arguments.delta") {
+                // Incremental function-call args: { item_id/call_id, delta }
+                const callId = evt.item_id ?? evt.call_id ?? evt.id ?? "call-0";
+                const entry = fnArgs.get(callId) ?? { name: evt.name ?? "", args: "" };
+                if (evt.name && !entry.name) entry.name = evt.name;
+                if (typeof evt.delta === "string") entry.args += evt.delta;
+                fnArgs.set(callId, entry);
+                if (!fnIndex.has(callId)) fnIndex.set(callId, fnCounter++);
+                send(
+                  self._chatChunk(
+                    requestedModel,
+                    chunkId,
+                    created,
+                    {
+                      role: "assistant",
+                      tool_calls: [
+                        { index: fnIndex.get(callId), id: callId, type: "function", function: { name: entry.name || undefined, arguments: evt.delta ?? "" } },
+                      ],
+                    },
+                    null
+                  )
+                );
+              } else if (evt?.type === "response.output_item.done" && evt?.item?.type === "function_call") {
+                const item = evt.item;
+                const callId = item.call_id || item.id || "call-0";
+                if (!fnIndex.has(callId)) fnIndex.set(callId, fnCounter++);
+                const argsStr = typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments ?? {});
+                fnArgs.set(callId, { name: item.name ?? "", args: argsStr });
+                send(
+                  self._chatChunk(
+                    requestedModel,
+                    chunkId,
+                    created,
+                    {
+                      role: "assistant",
+                      tool_calls: [
+                        { index: fnIndex.get(callId), id: callId, type: "function", function: { name: item.name, arguments: argsStr } },
+                      ],
+                    },
+                    null
+                  )
+                );
               } else if (evt?.type === "response.completed" && evt.response) {
                 const { toolCalls } = self._extractResponsesContent(evt.response);
                 if (toolCalls.length > 0) {
-                  send(
-                    self._chatChunk(
-                      requestedModel,
-                      chunkId,
-                      created,
-                      { role: "assistant", tool_calls: toolCalls },
-                      null
-                    )
-                  );
+                  if (fnArgs.size === 0) {
+                    // No incremental deltas were streamed — emit the full calls once.
+                    send(
+                      self._chatChunk(
+                        requestedModel,
+                        chunkId,
+                        created,
+                        { role: "assistant", tool_calls: toolCalls },
+                        null
+                      )
+                    );
+                  }
                   send(self._chatChunk(requestedModel, chunkId, created, {}, "tool_calls"));
                 } else if (!sawText) {
                   // No deltas arrived (some gateways only send the final
@@ -289,6 +405,51 @@ export class OpenCodeConnector {
       },
     });
     return Readable.fromWeb(out);
+  }
+
+  /**
+   * True when an upstream failure is worth ONE retry on the fallback model.
+   * 429/5xx/network errors: yes. 400: only when the body blames the model
+   * (model_not_found, unknown parameter, ...) — a 400 about OUR arguments
+   * would fail identically on fallback, so don't burn the extra call.
+   * 401/403 (auth): never — fallback shares the same credentials.
+   */
+  static isFallbackWorthy(err) {
+    if (!err || typeof err !== "object") return false;
+    const status = err.status;
+    if (status === 429) return true;
+    if (typeof status === "number" && status >= 500 && status <= 599) return true;
+    if (status === undefined || status === null) {
+      // No HTTP status: network failure / timeout / fetch throw.
+      return true;
+    }
+    if (status === 400) {
+      const text = `${err.message ?? ""} ${err.upstreamBody ?? ""}`.toLowerCase();
+      return MODEL_FAULT_MARKERS.some((m) => text.includes(m));
+    }
+    return false;
+  }
+
+  /**
+   * Non-streaming chat with ONE fallback retry. Returns
+   * `{ completion, fallbackUsed, fallbackModel? }` — never throws for
+   * fallback-worthy errors unless the fallback itself also fails.
+   */
+  async chatWithFallback(rawBody, opts = {}) {
+    const fallbackModel = opts.fallbackModel ?? DEFAULT_FALLBACK_MODEL;
+    try {
+      const completion = await this.chat(rawBody);
+      return { completion, fallbackUsed: false };
+    } catch (err) {
+      const sameModel = (rawBody?.model ?? "") === fallbackModel;
+      if (sameModel || !OpenCodeConnector.isFallbackWorthy(err)) throw err;
+      console.warn(
+        `[connector] primary model "${rawBody?.model}" failed (${err.status ?? "network"}); ` +
+          `retrying once on fallback "${fallbackModel}".`
+      );
+      const completion = await this.chat({ ...rawBody, model: fallbackModel });
+      return { completion, fallbackUsed: true, fallbackModel };
+    }
   }
 
   /**

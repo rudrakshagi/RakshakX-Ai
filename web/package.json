@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"cd ../opencode-bridge && node server.js\" \"vite --host\" \"cd .. && PYTHONPATH=. .venv/bin/python -c 'from rakshak.interface.viewer.server import start_viewer_server; start_viewer_server(\\\"latest\\\", port=8080)'\"",
+    "dev": "concurrently \"cd ../opencode-bridge && node server.js\" \"vite --host\" \"cd .. && PYTHONPATH=. RAKSHAK_ALLOWED_SCOPES=rudrakshai.in .venv/bin/python -c 'from rakshak.interface.viewer.server import start_viewer_server; start_viewer_server(\\\"latest\\\", port=8080)'\"",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

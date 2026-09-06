@@ -62,6 +62,26 @@ def test_exec_command(sandbox):
     assert "rakshak-live-test" in out
 
 
+def test_nmap_executes_and_sudo_syn_scan(sandbox):
+    """Regression: nmap must execute and raw scans must work via sudo.
+
+    The image used to ship file capabilities on the nmap binary, which made
+    every exec fail with "Operation not permitted" — even as root. Raw scans
+    now run via passwordless sudo (container gets NET_RAW via cap_add).
+    """
+    client, container = sandbox
+    code, out = client.exec_command(container, "nmap --version")
+    assert code == 0, out
+    assert "Nmap version" in out
+    assert "Operation not permitted" not in out
+
+    code, out = client.exec_command(
+        container, "sudo -n nmap -sS --top-ports 1 --host-timeout 30s 127.0.0.1"
+    )
+    assert "Operation not permitted" not in out
+    assert code == 0, out
+
+
 def test_write_and_read_file(sandbox):
     client, container = sandbox
     path = "/workspace/live_write_test.txt"
